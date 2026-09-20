@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block title %}Đăng Ký Bệnh Nhân - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-7 col-md-9">
+      <div class="card card-custom p-4 p-md-5 border shadow-sm">
+        
+        <div class="text-center mb-4">
+          <div class="p-3 bg-success-subtle text-success rounded-circle d-inline-flex mb-2">
+            <i class="bi bi-person-plus-fill fs-2"></i>
+          </div>
+          <h3 class="fw-bold text-dark">Đăng Ký Tài Khoản Bệnh Nhân</h3>
+          <p class="text-muted small">Tạo tài khoản để quản lý lịch khám, theo dõi hồ sơ và nhận tư vấn sức khỏe</p>
+        </div>
+
+        <form method="POST">
+          {% csrf_token %}
+
+          {% if form.errors %}
+            <div class="alert alert-danger small p-2 mb-3">
+              Vui lòng kiểm tra lại thông tin các trường báo đỏ bên dưới.
+            </div>
+          {% endif %}
+
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Tên đăng nhập <span class="text-danger">*</span></label>
+              {{ form.username }}
+              {% if form.username.errors %}<div class="text-danger small">{{ form.username.errors }}</div>{% endif %}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Họ và tên đầy đủ <span class="text-danger">*</span></label>
+              {{ form.full_name }}
+              {% if form.full_name.errors %}<div class="text-danger small">{{ form.full_name.errors }}</div>{% endif %}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Mật khẩu <span class="text-danger">*</span></label>
+              {{ form.password }}
+              {% if form.password.errors %}<div class="text-danger small">{{ form.password.errors }}</div>{% endif %}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Xác nhận mật khẩu <span class="text-danger">*</span></label>
+              {{ form.password_confirm }}
+              {% if form.password_confirm.errors %}<div class="text-danger small">{{ form.password_confirm.errors }}</div>{% endif %}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email:</label>
+              {{ form.email }}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Số điện thoại liên hệ:</label>
+              {{ form.phone }}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Giới tính:</label>
+              {{ form.gender }}
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Ngày sinh:</label>
+              {{ form.date_of_birth }}
+            </div>
+
+            <div class="col-12">
+              <label class="form-label fw-semibold">Địa chỉ:</label>
+              {{ form.address }}
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary-custom w-100 py-2 fw-bold mt-4">
+            Đăng Ký Tài Khoản
+          </button>
+        </form>
+
+        <div class="text-center mt-4 small">
+          Đã có tài khoản? <a href="{% url 'login' %}" class="text-primary fw-bold text-decoration-none">Đăng nhập</a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

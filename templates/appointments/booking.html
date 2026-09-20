@@ -1,0 +1,740 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Quy Trình Đặt Lịch Khám Thông Minh 7 Bước - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{% url 'home' %}">Trang chủ</a></li>
+      <li class="breadcrumb-item active">Quy trình đặt lịch khám</li>
+    </ol>
+  </nav>
+
+  <!-- Title -->
+  <div class="text-center max-w-700 mx-auto mb-4">
+    <span class="badge bg-primary-subtle text-primary px-3 py-2 rounded-pill fw-bold mb-2">QUY TRÌNH CHUẨN Y KHOA</span>
+    <h2 class="fw-bold">Đặt Lịch Khám Bệnh Thông Minh</h2>
+    <p class="text-muted small">
+      Hệ thống hướng dẫn bạn từng bước từ sàng lọc triệu chứng, chọn tỉnh thành, bệnh viện, bác sĩ và khung giờ thích hợp.
+    </p>
+  </div>
+
+  <!-- Wizard Steps Progress Bar -->
+  <div class="wizard-steps d-none d-md-flex">
+    <div class="wizard-step-item active" id="step-indicator-1">
+      <div class="wizard-step-circle">1</div>
+      <span class="wizard-step-title">Triệu Chứng</span>
+    </div>
+    <div class="wizard-step-item" id="step-indicator-2">
+      <div class="wizard-step-circle">2</div>
+      <span class="wizard-step-title">Chọn Tỉnh/TP</span>
+    </div>
+    <div class="wizard-step-item" id="step-indicator-3">
+      <div class="wizard-step-circle">3</div>
+      <span class="wizard-step-title">Chọn Bệnh Viện</span>
+    </div>
+    <div class="wizard-step-item" id="step-indicator-4">
+      <div class="wizard-step-circle">4</div>
+      <span class="wizard-step-title">Chọn Bác Sĩ</span>
+    </div>
+    <div class="wizard-step-item" id="step-indicator-5">
+      <div class="wizard-step-circle">5</div>
+      <span class="wizard-step-title">Ngày & Giờ</span>
+    </div>
+    <div class="wizard-step-item" id="step-indicator-6">
+      <div class="wizard-step-circle">6</div>
+      <span class="wizard-step-title">Thông Tin</span>
+    </div>
+    <div class="wizard-step-item" id="step-indicator-7">
+      <div class="wizard-step-circle">7</div>
+      <span class="wizard-step-title">Xác Nhận</span>
+    </div>
+  </div>
+
+  <!-- Mobile Step Text Indicator -->
+  <div class="d-md-none text-center mb-3">
+    <span class="badge bg-primary fs-6" id="mobile-step-indicator">Bước 1: Khai báo triệu chứng & Chuyên khoa</span>
+  </div>
+
+  <!-- Wizard Main Card -->
+  <div class="card card-custom p-4 p-md-5 border shadow-sm">
+    
+    <!-- ================= BƯỚC 1: TRIỆU CHỨNG & CHUYÊN KHOA ================= -->
+    <div class="wizard-step-pane" id="step-pane-1">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="p-2 bg-primary-subtle text-primary rounded-circle"><i class="bi bi-chat-heart fs-4"></i></span>
+        <div>
+          <h4 class="fw-bold mb-0">Bước 1: Bạn Đang Gặp Triệu Chứng Gì?</h4>
+          <small class="text-muted">Nhập triệu chứng để AI gợi ý hoặc tự chọn Chuyên khoa bạn mong muốn</small>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Mô tả triệu chứng / Lý do đi khám:</label>
+        <div class="input-group">
+          <input type="text" class="form-control form-control-lg" id="inputSymptom" placeholder="Ví dụ: Tôi bị đau nửa đầu và chóng mặt 2 ngày nay..." value="{{ init_symptom }}">
+          <button class="btn btn-outline-primary" type="button" onclick="askAiSuggestSpecialty()">
+            <i class="bi bi-robot me-1"></i> AI Gợi ý chuyên khoa
+          </button>
+        </div>
+        <div id="aiSpecialtyResult" class="mt-2 small text-primary fw-semibold" style="display: none;"></div>
+      </div>
+
+      <div class="mb-4">
+        <label class="form-label fw-semibold">Hoặc chọn trực tiếp Chuyên khoa:</label>
+        <div class="row g-3" id="specialtyList">
+          {% for ck in specialties %}
+            <div class="col-lg-4 col-md-6">
+              <div class="p-3 border rounded-3 specialty-option h-100 cursor-pointer transition" 
+                   data-id="{{ ck.id }}" data-name="{{ ck.ten_chuyen_khoa }}" onclick="selectSpecialty(this)">
+                <div class="d-flex align-items-center gap-3">
+                  <i class="bi {{ ck.bieu_tuong|default:'bi-heart-pulse' }} fs-3 text-primary"></i>
+                  <div>
+                    <h6 class="fw-bold mb-1">{{ ck.ten_chuyen_khoa }}</h6>
+                    <small class="text-muted d-block" style="font-size: 0.75rem;">{{ ck.mo_ta|truncatechars:45 }}</small>
+                  </div>
+                </div>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+
+      <div class="text-end pt-3 border-top">
+        <button class="btn btn-primary-custom px-4" onclick="goToStep(2)">
+          Tiếp tục: Chọn Tỉnh / Thành phố <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= BƯỚC 2: CHỌN TỈNH / THÀNH PHỐ ================= -->
+    <div class="wizard-step-pane" id="step-pane-2" style="display: none;">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="p-2 bg-danger-subtle text-danger rounded-circle"><i class="bi bi-geo-alt-fill fs-4"></i></span>
+        <div>
+          <h4 class="fw-bold mb-0">Bước 2: Chọn Tỉnh / Thành Phố Nơi Bạn Muốn Khám</h4>
+          <small class="text-muted">Hệ thống sẽ lọc ra các bệnh viện thuộc Tỉnh/Thành phố mà bạn lựa chọn</small>
+        </div>
+      </div>
+
+      <div class="row g-4 mb-4" id="provinceOptions">
+        {% for prov in provinces %}
+          <div class="col-lg-4 col-md-6">
+            <div class="p-4 border rounded-4 text-center province-option cursor-pointer transition h-100" 
+                 data-id="{{ prov.id }}" data-name="{{ prov.ten_tinh }}" onclick="selectProvince(this)">
+              <div class="p-3 bg-light rounded-circle text-danger mx-auto mb-2" style="width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">
+                <i class="bi bi-geo-alt-fill fs-3"></i>
+              </div>
+              <h5 class="fw-bold text-dark mb-1">{{ prov.ten_tinh }}</h5>
+              <span class="badge bg-light text-primary border">{{ prov.benh_viens.count }} Bệnh viện liên kết</span>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+
+      <div class="d-flex justify-content-between pt-3 border-top">
+        <button class="btn btn-outline-secondary" onclick="goToStep(1)"><i class="bi bi-arrow-left me-1"></i> Quay lại</button>
+        <button class="btn btn-primary-custom px-4" id="btnNextStep3" onclick="goToStep(3)" disabled>
+          Tiếp tục: Xem Bệnh viện thuộc tỉnh <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= BƯỚC 3: HIỂN THỊ BỆNH VIỆN THUỘC TỈNH ĐÓ ================= -->
+    <div class="wizard-step-pane" id="step-pane-3" style="display: none;">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="p-2 bg-warning-subtle text-warning rounded-circle"><i class="bi bi-hospital-fill fs-4"></i></span>
+        <div>
+          <h4 class="fw-bold mb-0">Bước 3: Chọn Bệnh Viện Tiếp Nhận</h4>
+          <small class="text-muted">
+            Danh sách các bệnh viện tại: <strong class="text-primary" id="selectedProvinceNameDisplay">...</strong>
+          </small>
+        </div>
+      </div>
+
+      <!-- Vùng hiển thị bệnh viện load động theo Tỉnh đã chọn qua AJAX -->
+      <div id="hospitalLoading" class="text-center py-4" style="display: none;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <div class="text-muted mt-2">Đang tải danh sách bệnh viện thuộc tỉnh...</div>
+      </div>
+
+      <div class="row g-4 mb-4" id="hospitalsInProvinceContainer">
+        <!-- Javascript sẽ append danh sách bệnh viện thuộc tỉnh vào đây -->
+      </div>
+
+      <div class="d-flex justify-content-between pt-3 border-top">
+        <button class="btn btn-outline-secondary" onclick="goToStep(2)"><i class="bi bi-arrow-left me-1"></i> Chọn lại Tỉnh</button>
+        <button class="btn btn-primary-custom px-4" id="btnNextStep4" onclick="goToStep(4)" disabled>
+          Tiếp tục: Chọn Bác sĩ <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= BƯỚC 4: CHỌN BÁC SĨ ================= -->
+    <div class="wizard-step-pane" id="step-pane-4" style="display: none;">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="p-2 bg-success-subtle text-success rounded-circle"><i class="bi bi-person-badge-fill fs-4"></i></span>
+        <div>
+          <h4 class="fw-bold mb-0">Bước 4: Chọn Bác Sĩ Khám Bệnh</h4>
+          <small class="text-muted">Các bác sĩ chuyên khoa tại bệnh viện bạn đã chọn</small>
+        </div>
+      </div>
+
+      <div id="doctorLoading" class="text-center py-4" style="display: none;">
+        <div class="spinner-border text-primary" role="status"></div>
+        <div class="text-muted mt-2">Đang tìm bác sĩ khả dụng...</div>
+      </div>
+
+      <div class="row g-4 mb-4" id="doctorsContainer">
+        <!-- Javascript load danh sách bác sĩ -->
+      </div>
+
+      <div class="d-flex justify-content-between pt-3 border-top">
+        <button class="btn btn-outline-secondary" onclick="goToStep(3)"><i class="bi bi-arrow-left me-1"></i> Chọn lại Bệnh viện</button>
+        <button class="btn btn-primary-custom px-4" id="btnNextStep5" onclick="goToStep(5)" disabled>
+          Tiếp tục: Chọn Ngày & Giờ <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= BƯỚC 5: CHỌN NGÀY & KHUNG GIỜ ================= -->
+    <div class="wizard-step-pane" id="step-pane-5" style="display: none;">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="p-2 bg-primary-subtle text-primary rounded-circle"><i class="bi bi-clock-fill fs-4"></i></span>
+        <div>
+          <h4 class="fw-bold mb-0">Bước 5: Chọn Ngày & Khung Giờ Khám Còn Trống</h4>
+          <small class="text-muted">Bác sĩ: <strong class="text-primary" id="selectedDoctorNameDisplay">...</strong></small>
+        </div>
+      </div>
+
+      <div class="row g-4 mb-4">
+        <div class="col-md-5">
+          <label class="form-label fw-semibold">Chọn ngày bạn muốn khám:</label>
+          <input type="date" class="form-control form-control-lg" id="inputBookingDate" onchange="fetchDoctorTimeSlots()">
+          <small class="text-muted mt-1 d-block">Lưu ý: Chỉ chọn các ngày làm việc trong tuần</small>
+        </div>
+
+        <div class="col-md-7">
+          <label class="form-label fw-semibold">Khung giờ khám khả dụng:</label>
+          <div id="slotLoading" class="py-3 text-center" style="display: none;">
+            <div class="spinner-border spinner-border-sm text-primary"></div> Đang kiểm tra lịch trống...
+          </div>
+          <div class="d-flex flex-wrap gap-2" id="timeSlotsContainer">
+            <span class="text-muted small">Vui lòng chọn ngày khám ở bên trái để xem các khung giờ còn trống.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between pt-3 border-top">
+        <button class="btn btn-outline-secondary" onclick="goToStep(4)"><i class="bi bi-arrow-left me-1"></i> Chọn lại Bác sĩ</button>
+        <button class="btn btn-primary-custom px-4" id="btnNextStep6" onclick="goToStep(6)" disabled>
+          Tiếp tục: Điền thông tin <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= BƯỚC 6: ĐIỀN THÔNG TIN LIÊN HỆ ================= -->
+    <div class="wizard-step-pane" id="step-pane-6" style="display: none;">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="p-2 bg-info-subtle text-info rounded-circle"><i class="bi bi-card-text fs-4"></i></span>
+        <div>
+          <h4 class="fw-bold mb-0">Bước 6: Thông Tin Bệnh Nhân</h4>
+          <small class="text-muted">Điền chính xác thông tin để bệnh viện liên hệ xác nhận cuộc hẹn</small>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-4">
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Họ và tên người khám <span class="text-danger">*</span></label>
+          <input type="text" class="form-control form-control-lg" id="patientFullName" 
+                 value="{% if user.is_authenticated %}{{ user.full_name|default:user.username }}{% endif %}" placeholder="Ví dụ: Nguyễn Văn An" required>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label fw-semibold">Số điện thoại liên hệ <span class="text-danger">*</span></label>
+          <input type="tel" class="form-control form-control-lg" id="patientPhone" 
+                 value="{% if user.is_authenticated %}{{ user.phone|default:'' }}{% endif %}" placeholder="Ví dụ: 0905123456" required>
+        </div>
+        <div class="col-12">
+          <label class="form-label fw-semibold">Ghi chú bổ sung cho bác sĩ (nếu có):</label>
+          <textarea class="form-control" id="bookingReason" rows="3" placeholder="Các tiền sử bệnh lý, thuốc đang dùng hoặc yêu cầu đặc biệt..."></textarea>
+        </div>
+      </div>
+
+      <div class="d-flex justify-content-between pt-3 border-top">
+        <button class="btn btn-outline-secondary" onclick="goToStep(5)"><i class="bi bi-arrow-left me-1"></i> Chọn lại Giờ</button>
+        <button class="btn btn-primary-custom px-4" onclick="goToStep(7)">
+          Kiểm tra & Xác nhận đặt lịch <i class="bi bi-arrow-right ms-1"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- ================= BƯỚC 7: XÁC NHẬN & ĐẶT LỊCH THÀNH CÔNG ================= -->
+    <div class="wizard-step-pane" id="step-pane-7" style="display: none;">
+      <div class="d-flex align-items-center gap-2 mb-3">
+        <span class="p-2 bg-success-subtle text-success rounded-circle"><i class="bi bi-check2-circle fs-4"></i></span>
+        <div>
+          <h4 class="fw-bold mb-0">Bước 7: Xác Nhận Thông Tin Cuộc Hẹn</h4>
+          <small class="text-muted">Vui lòng kiểm tra lại toàn bộ thông tin trước khi hoàn tất đặt lịch</small>
+        </div>
+      </div>
+
+      <div class="card p-4 bg-light border mb-4 rounded-4">
+        <div class="row g-3">
+          <div class="col-sm-6">
+            <span class="text-muted small">Tỉnh / Thành phố:</span>
+            <div class="fw-bold fs-6 text-dark" id="reviewProvince">-</div>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted small">Bệnh viện tiếp nhận:</span>
+            <div class="fw-bold fs-6 text-dark" id="reviewHospital">-</div>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted small">Chuyên khoa:</span>
+            <div class="fw-bold fs-6 text-dark" id="reviewSpecialty">-</div>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted small">Bác sĩ phụ trách:</span>
+            <div class="fw-bold fs-6 text-dark" id="reviewDoctor">-</div>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted small">Ngày khám:</span>
+            <div class="fw-bold fs-6 text-primary" id="reviewDate">-</div>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted small">Giờ khám:</span>
+            <div class="fw-bold fs-6 text-primary" id="reviewTime">-</div>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted small">Bệnh nhân:</span>
+            <div class="fw-bold fs-6 text-dark" id="reviewPatientName">-</div>
+          </div>
+          <div class="col-sm-6">
+            <span class="text-muted small">Số điện thoại:</span>
+            <div class="fw-bold fs-6 text-dark" id="reviewPatientPhone">-</div>
+          </div>
+          <div class="col-12">
+            <span class="text-muted small">Triệu chứng khai báo:</span>
+            <div class="text-secondary small fst-italic" id="reviewSymptom">-</div>
+          </div>
+        </div>
+      </div>
+
+      <div id="bookingSubmitLoading" class="text-center py-3" style="display: none;">
+        <div class="spinner-border text-success" role="status"></div>
+        <div class="text-muted mt-2">Đang lưu thông tin lịch khám vào hệ thống...</div>
+      </div>
+
+      <div class="d-flex justify-content-between pt-3 border-top" id="submitActionGroup">
+        <button class="btn btn-outline-secondary" onclick="goToStep(6)"><i class="bi bi-arrow-left me-1"></i> Điều chỉnh lại</button>
+        <button class="btn btn-success btn-lg px-5 fw-bold shadow" onclick="submitFinalBooking()">
+          <i class="bi bi-check-circle-fill me-2"></i> XÁC NHẬN ĐẶT LỊCH
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.cursor-pointer { cursor: pointer; }
+.transition { transition: all 0.2s ease; }
+.specialty-option:hover, .province-option:hover, .hospital-card-select:hover, .doctor-card-select:hover {
+  border-color: var(--primary) !important;
+  background-color: #f0f9ff !important;
+  transform: translateY(-2px);
+}
+.specialty-option.selected, .province-option.selected, .hospital-card-select.selected, .doctor-card-select.selected {
+  border-color: var(--primary) !important;
+  background-color: #e0f2fe !important;
+  box-shadow: 0 0 0 3px rgba(2, 132, 199, 0.2);
+}
+.time-slot-btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1.5px solid var(--border-color);
+  background: white;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+}
+.time-slot-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+.time-slot-btn.selected {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: white;
+}
+.time-slot-btn.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Booking Wizard State
+const state = {
+  currentStep: 1,
+  specialtyId: '{{ init_specialty }}',
+  specialtyName: '',
+  symptom: '{{ init_symptom }}',
+  tinhId: '{{ init_tinh }}',
+  tinhName: '',
+  hospitalId: '{{ init_hospital }}',
+  hospitalName: '',
+  doctorId: '{{ init_doctor }}',
+  doctorName: '',
+  date: '',
+  time: '',
+  fullName: '',
+  phone: '',
+  reason: ''
+};
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Set ngày tối thiểu cho input date là ngày mai
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const minDateStr = tomorrow.toISOString().split('T')[0];
+  document.getElementById('inputBookingDate').min = minDateStr;
+  document.getElementById('inputBookingDate').value = minDateStr;
+
+  // Nếu có init params từ URL
+  if (state.tinhId) {
+    const provEl = document.querySelector(`.province-option[data-id="${state.tinhId}"]`);
+    if (provEl) selectProvince(provEl);
+  }
+  if (state.specialtyId) {
+    const spEl = document.querySelector(`.specialty-option[data-id="${state.specialtyId}"]`);
+    if (spEl) selectSpecialty(spEl);
+  }
+});
+
+function goToStep(step) {
+  state.currentStep = step;
+
+  // Ẩn tất cả step panes
+  document.querySelectorAll('.wizard-step-pane').forEach(el => el.style.display = 'none');
+  const targetPane = document.getElementById(`step-pane-${step}`);
+  if (targetPane) targetPane.style.display = 'block';
+
+  // Cập nhật Step indicators
+  for (let i = 1; i <= 7; i++) {
+    const ind = document.getElementById(`step-indicator-${i}`);
+    if (!ind) continue;
+    ind.classList.remove('active', 'completed');
+    if (i === step) ind.classList.add('active');
+    else if (i < step) ind.classList.add('completed');
+  }
+
+  // Cập nhật text mobile
+  const titles = [
+    '',
+    'Bước 1: Triệu chứng & Chuyên khoa',
+    'Bước 2: Chọn Tỉnh / Thành phố',
+    'Bước 3: Chọn Bệnh viện thuộc tỉnh',
+    'Bước 4: Chọn Bác sĩ chuyên khoa',
+    'Bước 5: Chọn Ngày & Khung giờ',
+    'Bước 6: Thông tin người khám',
+    'Bước 7: Xác nhận & Đặt lịch'
+  ];
+  const mobTitle = document.getElementById('mobile-step-indicator');
+  if (mobTitle) mobTitle.textContent = titles[step];
+
+  // Cuộn lên đầu card
+  window.scrollTo({ top: 150, behavior: 'smooth' });
+
+  // Xử lý khi vào từng bước cụ thể
+  if (step === 3) {
+    loadHospitalsByProvince();
+  } else if (step === 4) {
+    loadDoctors();
+  } else if (step === 5) {
+    fetchDoctorTimeSlots();
+  } else if (step === 7) {
+    populateReviewData();
+  }
+}
+
+// BƯỚC 1: Chọn Chuyên khoa
+function selectSpecialty(element) {
+  document.querySelectorAll('.specialty-option').forEach(el => el.classList.remove('selected'));
+  element.classList.add('selected');
+  state.specialtyId = element.getAttribute('data-id');
+  state.specialtyName = element.getAttribute('data-name');
+}
+
+function askAiSuggestSpecialty() {
+  const symptomText = document.getElementById('inputSymptom').value.trim();
+  if (!symptomText) {
+    alert('Vui lòng nhập triệu chứng của bạn để AI phân tích!');
+    return;
+  }
+  state.symptom = symptomText;
+
+  const resultDiv = document.getElementById('aiSpecialtyResult');
+  resultDiv.style.display = 'block';
+  resultDiv.innerHTML = '<span class="spinner-grow spinner-grow-sm"></span> AI đang phân tích triệu chứng...';
+
+  fetch('/chatbot/api/send/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCsrfToken() },
+    body: JSON.stringify({ message: symptomText })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === 'success' && data.data.suggested_specialty) {
+      const spec = data.data.suggested_specialty;
+      resultDiv.innerHTML = `💡 AI gợi ý bạn nên khám chuyên khoa: <strong class="text-success">${spec}</strong>`;
+      // Tự động tìm và highlight chuyên khoa tương ứng
+      const matchingEl = Array.from(document.querySelectorAll('.specialty-option')).find(el => el.getAttribute('data-name').includes(spec));
+      if (matchingEl) selectSpecialty(matchingEl);
+    } else {
+      resultDiv.innerHTML = 'AI khuyến nghị bạn nên chọn chuyên khoa <strong>Nội tổng quát</strong> để khám ban đầu.';
+    }
+  })
+  .catch(() => {
+    resultDiv.innerHTML = 'Không thể kết nối AI, bạn có thể tự chọn chuyên khoa bên dưới.';
+  });
+}
+
+// BƯỚC 2: Chọn Tỉnh / Thành phố
+function selectProvince(element) {
+  document.querySelectorAll('.province-option').forEach(el => el.classList.remove('selected'));
+  element.classList.add('selected');
+  state.tinhId = element.getAttribute('data-id');
+  state.tinhName = element.getAttribute('data-name');
+
+  document.getElementById('btnNextStep3').disabled = false;
+  document.getElementById('selectedProvinceNameDisplay').textContent = state.tinhName;
+}
+
+// BƯỚC 3: Tải bệnh viện thuộc tỉnh đã chọn (AJAX)
+function loadHospitalsByProvince() {
+  if (!state.tinhId) return;
+
+  const container = document.getElementById('hospitalsInProvinceContainer');
+  const loading = document.getElementById('hospitalLoading');
+  container.innerHTML = '';
+  loading.style.display = 'block';
+
+  let url = `/hospitals/api/by-province/${state.tinhId}/`;
+  if (state.specialtyId) {
+    url += `?chuyen_khoa_id=${state.specialtyId}`;
+  }
+
+  fetch(url)
+    .then(res => res.json())
+    .then(data => {
+      loading.style.display = 'none';
+      if (data.status === 'success' && data.data.length > 0) {
+        data.data.forEach(h => {
+          const col = document.createElement('div');
+          col.className = 'col-lg-4 col-md-6';
+          col.innerHTML = `
+            <div class="card hospital-card-select p-3 border rounded-3 h-100 cursor-pointer transition ${state.hospitalId == h.id ? 'selected' : ''}"
+                 data-id="${h.id}" data-name="${h.ten_benh_vien}" onclick="selectHospital(this)">
+              <img src="${h.hinh_anh}" alt="${h.ten_benh_vien}" class="rounded-2 mb-2 w-100" style="height: 140px; object-fit: cover;">
+              <h6 class="fw-bold mb-1">${h.ten_benh_vien}</h6>
+              <p class="small text-muted mb-2"><i class="bi bi-pin-map text-danger"></i> ${h.dia_chi}</p>
+              <div class="mt-auto d-flex justify-content-between align-items-center pt-2 border-top">
+                <span class="small text-primary"><i class="bi bi-telephone"></i> ${h.so_dien_thoai}</span>
+                <span class="badge bg-primary-subtle text-primary">Chọn viện</span>
+              </div>
+            </div>
+          `;
+          container.appendChild(col);
+        });
+
+        if (state.hospitalId) {
+          const chosen = container.querySelector(`.hospital-card-select[data-id="${state.hospitalId}"]`);
+          if (chosen) selectHospital(chosen);
+        }
+      } else {
+        container.innerHTML = `
+          <div class="col-12 text-center py-4 text-muted">
+            <i class="bi bi-hospital fs-2"></i>
+            <p class="mt-2">Chưa có bệnh viện nào tại tỉnh này đáp ứng tiêu chí. Vui lòng chọn tỉnh khác.</p>
+          </div>
+        `;
+      }
+    });
+}
+
+function selectHospital(element) {
+  document.querySelectorAll('.hospital-card-select').forEach(el => el.classList.remove('selected'));
+  element.classList.add('selected');
+  state.hospitalId = element.getAttribute('data-id');
+  state.hospitalName = element.getAttribute('data-name');
+  document.getElementById('btnNextStep4').disabled = false;
+}
+
+// BƯỚC 4: Tải danh sách bác sĩ
+function loadDoctors() {
+  const container = document.getElementById('doctorsContainer');
+  const loading = document.getElementById('doctorLoading');
+  container.innerHTML = '';
+  loading.style.display = 'block';
+
+  let url = `/doctors/api/by-criteria/?hospital_id=${state.hospitalId}`;
+  if (state.specialtyId) url += `&specialty_id=${state.specialtyId}`;
+
+  fetch(url)
+    .then(res => res.json())
+    .then(data => {
+      loading.style.display = 'none';
+      if (data.status === 'success' && data.data.length > 0) {
+        data.data.forEach(d => {
+          const col = document.createElement('div');
+          col.className = 'col-lg-4 col-md-6';
+          col.innerHTML = `
+            <div class="card doctor-card-select p-3 border rounded-3 text-center h-100 cursor-pointer transition ${state.doctorId == d.id ? 'selected' : ''}"
+                 data-id="${d.id}" data-name="${d.chuc_danh} ${d.ho_ten}" onclick="selectDoctor(this)">
+              <img src="${d.anh_dai_dien}" class="rounded-circle mx-auto mb-2 shadow-sm" style="width: 75px; height: 75px; object-fit: cover;">
+              <h6 class="fw-bold mb-1">${d.chuc_danh} ${d.ho_ten}</h6>
+              <span class="badge bg-primary-subtle text-primary mb-2">${d.chuyen_khoa}</span>
+              <div class="small text-muted mb-2">${d.so_nam_kinh_nghiem} năm kinh nghiệm</div>
+              <div class="fw-bold text-success small mb-2">Phí khám: ${d.gia_kham.toLocaleString()} đ</div>
+              <span class="badge bg-light text-primary border w-100">Chọn bác sĩ này</span>
+            </div>
+          `;
+          container.appendChild(col);
+        });
+
+        if (state.doctorId) {
+          const chosenDoc = container.querySelector(`.doctor-card-select[data-id="${state.doctorId}"]`);
+          if (chosenDoc) selectDoctor(chosenDoc);
+        }
+      } else {
+        container.innerHTML = `
+          <div class="col-12 text-center py-4 text-muted">
+            <i class="bi bi-person-x fs-2"></i>
+            <p class="mt-2">Không tìm thấy bác sĩ phù hợp tại bệnh viện và chuyên khoa này.</p>
+          </div>
+        `;
+      }
+    });
+}
+
+function selectDoctor(element) {
+  document.querySelectorAll('.doctor-card-select').forEach(el => el.classList.remove('selected'));
+  element.classList.add('selected');
+  state.doctorId = element.getAttribute('data-id');
+  state.doctorName = element.getAttribute('data-name');
+  document.getElementById('selectedDoctorNameDisplay').textContent = state.doctorName;
+  document.getElementById('btnNextStep5').disabled = false;
+}
+
+// BƯỚC 5: Tải khung giờ trống của Bác sĩ
+function fetchDoctorTimeSlots() {
+  const dateInput = document.getElementById('inputBookingDate');
+  state.date = dateInput.value;
+  if (!state.doctorId || !state.date) return;
+
+  const container = document.getElementById('timeSlotsContainer');
+  const loading = document.getElementById('slotLoading');
+  container.innerHTML = '';
+  loading.style.display = 'block';
+
+  fetch(`/doctors/api/${state.doctorId}/slots/?date=${state.date}`)
+    .then(res => res.json())
+    .then(data => {
+      loading.style.display = 'none';
+      if (data.status === 'success' && data.data.length > 0) {
+        data.data.forEach(slot => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = `time-slot-btn ${slot.available ? '' : 'disabled'}`;
+          btn.innerHTML = `<i class="bi bi-clock me-1"></i> ${slot.start_time} <span class="badge bg-light text-muted ms-1">còn ${slot.remaining}</span>`;
+          btn.onclick = () => selectTimeSlot(btn, slot.start_time);
+          container.appendChild(btn);
+        });
+      } else {
+        container.innerHTML = `<span class="text-muted small">Bác sĩ không có lịch làm việc trong ngày này. Vui lòng chọn ngày khác.</span>`;
+      }
+    });
+}
+
+function selectTimeSlot(btn, time) {
+  document.querySelectorAll('.time-slot-btn').forEach(b => b.classList.remove('selected'));
+  btn.classList.add('selected');
+  state.time = time;
+  document.getElementById('btnNextStep6').disabled = false;
+}
+
+// BƯỚC 7: Hiển thị tóm tắt và Xác nhận
+function populateReviewData() {
+  state.fullName = document.getElementById('patientFullName').value.trim();
+  state.phone = document.getElementById('patientPhone').value.trim();
+  state.reason = document.getElementById('bookingReason').value.trim();
+  state.symptom = document.getElementById('inputSymptom').value.trim();
+
+  document.getElementById('reviewProvince').textContent = state.tinhName || 'Chưa chọn';
+  document.getElementById('reviewHospital').textContent = state.hospitalName || 'Chưa chọn';
+  document.getElementById('reviewSpecialty').textContent = state.specialtyName || 'Chưa chọn';
+  document.getElementById('reviewDoctor').textContent = state.doctorName || 'Chưa chọn';
+  document.getElementById('reviewDate').textContent = state.date || 'Chưa chọn';
+  document.getElementById('reviewTime').textContent = state.time || 'Chưa chọn';
+  document.getElementById('reviewPatientName').textContent = state.fullName || 'Chưa điền';
+  document.getElementById('reviewPatientPhone').textContent = state.phone || 'Chưa điền';
+  document.getElementById('reviewSymptom').textContent = state.symptom || 'Không có mô tả chi tiết';
+}
+
+function submitFinalBooking() {
+  if (!state.fullName || !state.phone) {
+    alert('Vui lòng điền Họ tên và Số điện thoại liên hệ ở Bước 6!');
+    goToStep(6);
+    return;
+  }
+
+  const payload = {
+    hospital_id: state.hospitalId,
+    specialty_id: state.specialtyId,
+    doctor_id: state.doctorId,
+    date: state.date,
+    time: state.time,
+    full_name: state.fullName,
+    phone: state.phone,
+    symptom: state.symptom,
+    reason: state.reason
+  };
+
+  document.getElementById('bookingSubmitLoading').style.display = 'block';
+  document.getElementById('submitActionGroup').style.display = 'none';
+
+  fetch('/appointments/api/create/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-CSRFToken': getCsrfToken()
+    },
+    body: JSON.stringify(payload)
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.status === 'success') {
+      window.location.href = `/appointments/${data.appointment.id}/success/`;
+    } else {
+      alert('Đã có lỗi: ' + (data.message || 'Không thể tạo lịch khám'));
+      document.getElementById('bookingSubmitLoading').style.display = 'none';
+      document.getElementById('submitActionGroup').style.display = 'flex';
+    }
+  })
+  .catch(err => {
+    alert('Lỗi kết nối máy chủ!');
+    document.getElementById('bookingSubmitLoading').style.display = 'none';
+    document.getElementById('submitActionGroup').style.display = 'flex';
+  });
+}
+</script>
+{% endblock %}

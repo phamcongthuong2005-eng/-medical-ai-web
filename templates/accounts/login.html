@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+
+{% block title %}Đăng Nhập - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="row justify-content-center">
+    <div class="col-lg-5 col-md-7">
+      <div class="card card-custom p-4 p-md-5 border shadow-sm">
+        
+        <div class="text-center mb-4">
+          <div class="p-3 bg-primary-subtle text-primary rounded-circle d-inline-flex mb-2">
+            <i class="bi bi-box-arrow-in-right fs-2"></i>
+          </div>
+          <h3 class="fw-bold text-dark">Đăng Nhập Hệ Thống</h3>
+          <p class="text-muted small">Truy cập hồ sơ bệnh nhân hoặc bảng điều khiển bác sĩ</p>
+        </div>
+
+        <form method="POST">
+          {% csrf_token %}
+          
+          {% if form.non_field_errors %}
+            <div class="alert alert-danger small p-2 mb-3">
+              {{ form.non_field_errors }}
+            </div>
+          {% endif %}
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Tên đăng nhập:</label>
+            {{ form.username }}
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Mật khẩu:</label>
+            {{ form.password }}
+          </div>
+
+          <button type="submit" class="btn btn-primary-custom w-100 py-2 fw-bold mt-2">
+            Đăng Nhập
+          </button>
+        </form>
+
+        <!-- Tài khoản dùng thử mẫu cho đồ án -->
+        <div class="mt-4 p-3 bg-light rounded-3 border small">
+          <div class="fw-bold text-primary mb-1"><i class="bi bi-key-fill"></i> Tài khoản thử nghiệm có sẵn:</div>
+          <div class="text-muted">👨‍💼 <strong>Admin:</strong> <code>admin</code> / <code>admin123</code></div>
+          <div class="text-muted">👨‍⚕️ <strong>Bác sĩ:</strong> <code>bacsi_nam</code> / <code>doctor123</code></div>
+          <div class="text-muted">👤 <strong>Bệnh nhân:</strong> <code>benhnhan</code> / <code>patient123</code></div>
+        </div>
+
+        <div class="text-center mt-4 small">
+          Chưa có tài khoản? <a href="{% url 'register' %}" class="text-primary fw-bold text-decoration-none">Đăng ký khám ngay</a>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

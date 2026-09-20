@@ -1,0 +1,161 @@
+{% extends 'base.html' %}
+
+{% block title %}Danh Sách Bệnh Viện Theo Tỉnh Thành - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{% url 'home' %}" class="text-decoration-none">Trang chủ</a></li>
+      <li class="breadcrumb-item active" aria-current="page">Bệnh viện theo Tỉnh/Thành phố</li>
+    </ol>
+  </nav>
+
+  <!-- Header -->
+  <div class="bg-white p-4 rounded-4 shadow-sm border mb-4">
+    <div class="row align-items-center g-3">
+      <div class="col-lg-7">
+        <h2 class="fw-bold text-dark mb-1">
+          <i class="bi bi-hospital text-primary me-2"></i>Tra Cứu Bệnh Viện Theo Tỉnh / Thành Phố
+        </h2>
+        <p class="text-muted mb-0">
+          Lọc nhanh cơ sở y tế theo khu vực địa lý của bạn để thuận tiện cho việc di chuyển và đặt lịch khám.
+        </p>
+      </div>
+      <div class="col-lg-5 text-lg-end">
+        <a href="{% url 'booking_wizard' %}" class="btn btn-primary-custom">
+          <i class="bi bi-calendar2-check me-1"></i> Đặt lịch khám trực tiếp
+        </a>
+      </div>
+    </div>
+
+    <hr class="my-3">
+
+    <!-- Bộ Lọc Tỉnh Nhanh (Pills) -->
+    <div class="mb-3">
+      <label class="form-label fw-bold small text-secondary me-2"><i class="bi bi-geo-alt-fill text-danger"></i> Chọn Tỉnh/Thành phố nhanh:</label>
+      <div class="d-flex flex-wrap gap-2">
+        <a href="{% url 'hospital_list' %}" class="btn btn-sm {% if not selected_province %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3">
+          Tất cả tỉnh thành
+        </a>
+        {% for prov in provinces %}
+          <a href="{% url 'hospital_list' %}?tinh={{ prov.id }}{% if selected_specialty %}&chuyen_khoa={{ selected_specialty.id }}{% endif %}" 
+             class="btn btn-sm {% if selected_province.id == prov.id %}btn-primary{% else %}btn-outline-secondary{% endif %} rounded-pill px-3">
+            {{ prov.ten_tinh }}
+          </a>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Form Lọc Chi Tiết & Tìm Kiếm -->
+    <form method="GET" action="{% url 'hospital_list' %}" class="row g-2">
+      <div class="col-md-4">
+        <select name="tinh" class="form-select" onchange="this.form.submit()">
+          <option value="">-- Tất cả Tỉnh / Thành phố --</option>
+          {% for prov in provinces %}
+            <option value="{{ prov.id }}" {% if selected_province.id == prov.id %}selected{% endif %}>
+              📍 {{ prov.ten_tinh }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <select name="chuyen_khoa" class="form-select" onchange="this.form.submit()">
+          <option value="">-- Tất cả Chuyên khoa --</option>
+          {% for ck in specialties %}
+            <option value="{{ ck.id }}" {% if selected_specialty.id == ck.id %}selected{% endif %}>
+              🩺 {{ ck.ten_chuyen_khoa }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-4">
+        <div class="input-group">
+          <input type="text" name="q" class="form-control" placeholder="Tên bệnh viện, địa chỉ..." value="{{ keyword }}">
+          <button class="btn btn-primary" type="submit"><i class="bi bi-search"></i> Tìm</button>
+        </div>
+      </div>
+    </form>
+  </div>
+
+  <!-- Thông báo trạng thái lọc -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="text-muted small">
+      {% if selected_province %}
+        Đang lọc bệnh viện thuộc: <strong class="text-primary">{{ selected_province.ten_tinh }}</strong> • 
+      {% endif %}
+      Tìm thấy <strong>{{ total_count }}</strong> bệnh viện phù hợp
+    </div>
+    {% if selected_province or selected_specialty or keyword %}
+      <a href="{% url 'hospital_list' %}" class="text-danger small text-decoration-none">
+        <i class="bi bi-x-circle"></i> Xóa bộ lọc
+      </a>
+    {% endif %}
+  </div>
+
+  <!-- Danh sách Bệnh viện -->
+  <div class="row g-4">
+    {% for hospital in hospitals %}
+      <div class="col-lg-4 col-md-6">
+        <div class="card card-custom h-100 border overflow-hidden">
+          <div class="position-relative">
+            <img src="{{ hospital.hinh_anh }}" class="card-img-top" alt="{{ hospital.ten_benh_vien }}" style="height: 200px; object-fit: cover;">
+            <span class="badge bg-primary position-absolute top-0 start-0 m-3 px-3 py-2 shadow">
+              <i class="bi bi-geo-alt-fill"></i> {{ hospital.tinh.ten_tinh }}
+            </span>
+          </div>
+
+          <div class="card-body d-flex flex-column">
+            <h5 class="card-title fw-bold text-dark mb-2">
+              <a href="{% url 'hospital_detail' hospital.id %}" class="text-decoration-none text-dark hover-primary">
+                {{ hospital.ten_benh_vien }}
+              </a>
+            </h5>
+
+            <p class="card-text text-muted small mb-2">
+              <i class="bi bi-pin-map text-danger me-1"></i> {{ hospital.dia_chi }}
+            </p>
+
+            <p class="card-text text-muted small mb-3">
+              <i class="bi bi-telephone text-primary me-1"></i> {{ hospital.so_dien_thoai }}
+            </p>
+
+            <!-- Chuyên khoa tags -->
+            <div class="mb-3">
+              <div class="small text-secondary fw-semibold mb-1">Chuyên khoa nổi bật:</div>
+              <div class="d-flex flex-wrap gap-1">
+                {% for ck in hospital.chuyen_khoas.all|slice:":4" %}
+                  <span class="badge bg-light text-secondary border" style="font-size: 0.72rem;">{{ ck.ten_chuyen_khoa }}</span>
+                {% endfor %}
+                {% if hospital.chuyen_khoas.count > 4 %}
+                  <span class="badge bg-light text-muted border" style="font-size: 0.72rem;">+{{ hospital.chuyen_khoas.count|add:"-4" }}</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <!-- Nút hành động -->
+            <div class="d-flex gap-2 pt-3 border-top mt-auto">
+              <a href="{% url 'hospital_detail' hospital.id %}" class="btn btn-sm btn-outline-secondary flex-grow-1">
+                Chi tiết viện
+              </a>
+              <a href="{% url 'booking_wizard' %}?hospital={{ hospital.id }}&tinh={{ hospital.tinh.id }}" class="btn btn-sm btn-primary-custom flex-grow-1">
+                <i class="bi bi-calendar-plus me-1"></i> Đặt lịch
+              </a>
+            </div>
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="col-12 text-center py-5">
+        <div class="p-5 bg-white rounded-4 border">
+          <i class="bi bi-hospital text-muted" style="font-size: 3rem;"></i>
+          <h5 class="mt-3 fw-bold">Không tìm thấy bệnh viện nào</h5>
+          <p class="text-muted">Chưa có bệnh viện phù hợp với tiêu chí lọc tại khu vực này. Vui lòng thử chọn tỉnh thành khác.</p>
+          <a href="{% url 'hospital_list' %}" class="btn btn-primary btn-sm">Xem tất cả bệnh viện</a>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

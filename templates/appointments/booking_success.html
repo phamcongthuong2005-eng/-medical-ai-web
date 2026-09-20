@@ -1,0 +1,81 @@
+{% extends 'base.html' %}
+
+{% block title %}Đặt Lịch Thành Công - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+  <div class="max-w-700 mx-auto text-center" style="max-width: 650px;">
+    
+    <div class="mb-4">
+      <div class="mx-auto p-3 bg-success-subtle text-success rounded-circle" style="width: 85px; height: 85px; display: flex; align-items: center; justify-content: center;">
+        <i class="bi bi-check-circle-fill" style="font-size: 3rem;"></i>
+      </div>
+    </div>
+
+    <h2 class="fw-bold text-dark mb-2">Đặt Lịch Khám Thành Công!</h2>
+    <p class="text-muted mb-4">
+      Hệ thống đã tiếp nhận lịch hẹn của bạn và lưu vào cơ sở dữ liệu. Bệnh viện và bác sĩ phụ trách sẽ liên hệ xác nhận trong thời gian sớm nhất.
+    </p>
+
+    <!-- Ticket Receipt Card -->
+    <div class="card card-custom p-4 border text-start shadow-sm mb-4 bg-white position-relative">
+      <div class="d-flex justify-content-between align-items-center pb-3 border-bottom mb-3">
+        <div>
+          <span class="text-muted small">MÃ ĐẶT LỊCH (BOOKING ID)</span>
+          <h4 class="fw-extrabold text-primary font-monospace mb-0">{{ appointment.ma_lich_kham }}</h4>
+        </div>
+        <span class="badge badge-status-{{ appointment.trang_thai }} px-3 py-2 rounded-pill fs-6">
+          {{ appointment.get_trang_thai_display }}
+        </span>
+      </div>
+
+      <div class="row g-3 small">
+        <div class="col-sm-6">
+          <span class="text-muted">Bệnh nhân:</span>
+          <div class="fw-bold text-dark">{{ appointment.ten_benh_nhan }}</div>
+        </div>
+        <div class="col-sm-6">
+          <span class="text-muted">Số điện thoại:</span>
+          <div class="fw-bold text-dark">{{ appointment.so_dien_thoai }}</div>
+        </div>
+        <div class="col-sm-6">
+          <span class="text-muted">Bệnh viện:</span>
+          <div class="fw-bold text-dark">{{ appointment.benh_vien.ten_benh_vien }}</div>
+          <div class="text-muted small"><i class="bi bi-geo-alt"></i> {{ appointment.benh_vien.dia_chi }}</div>
+        </div>
+        <div class="col-sm-6">
+          <span class="text-muted">Bác sĩ phụ trách:</span>
+          <div class="fw-bold text-dark">{{ appointment.bac_si.chuc_danh }} {{ appointment.bac_si.ho_ten }}</div>
+          <span class="badge bg-primary-subtle text-primary">{{ appointment.chuyen_khoa.ten_chuyen_khoa }}</span>
+        </div>
+        <div class="col-sm-6">
+          <span class="text-muted">Thời gian khám:</span>
+          <div class="fw-bold text-success fs-6">
+            <i class="bi bi-calendar-event me-1"></i> {{ appointment.ngay_kham|date:"d/m/Y" }} lúc {{ appointment.gio_kham|time:"H:i" }}
+          </div>
+        </div>
+        <div class="col-sm-6">
+          <span class="text-muted">Phí khám dự kiến:</span>
+          <div class="fw-bold text-dark">{{ appointment.bac_si.gia_kham|floatformat:0 }} VNĐ</div>
+        </div>
+      </div>
+
+      <div class="mt-4 p-3 bg-light rounded-3 border small text-muted">
+        <i class="bi bi-info-circle text-primary me-1"></i>
+        <strong>Lưu ý:</strong> Quý khách vui lòng có mặt tại quầy tiếp đón của bệnh viện trước giờ hẹn <strong>15 phút</strong> và xuất trình Mã đặt lịch này để được ưu tiên làm thủ tục.
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="d-flex justify-content-center gap-3">
+      <a href="{% url 'my_appointments' %}" class="btn btn-primary-custom px-4">
+        <i class="bi bi-card-checklist me-1"></i> Xem lịch khám của tôi
+      </a>
+      <a href="{% url 'home' %}" class="btn btn-outline-secondary px-4">
+        <i class="bi bi-house me-1"></i> Về trang chủ
+      </a>
+    </div>
+
+  </div>
+</div>
+{% endblock %}

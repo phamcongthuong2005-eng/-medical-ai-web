@@ -1,0 +1,94 @@
+{% extends 'base.html' %}
+
+{% block title %}Lịch Khám Của Tôi - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{% url 'home' %}">Trang chủ</a></li>
+      <li class="breadcrumb-item active">Lịch khám của tôi</li>
+    </ol>
+  </nav>
+
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="fw-bold mb-1"><i class="bi bi-calendar-check text-primary me-2"></i>Lịch Khám Của Tôi</h2>
+      <p class="text-muted small mb-0">Theo dõi trạng thái các cuộc hẹn khám bệnh đã đặt trên hệ thống</p>
+    </div>
+    <a href="{% url 'booking_wizard' %}" class="btn btn-primary-custom">
+      <i class="bi bi-calendar-plus me-1"></i> Đặt lịch mới (7 bước)
+    </a>
+  </div>
+
+  <div class="card card-custom border overflow-hidden">
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Mã Đặt Lịch</th>
+            <th>Bệnh Viện & Địa Chỉ</th>
+            <th>Chuyên Khoa & Bác Sĩ</th>
+            <th>Thời Gian Khám</th>
+            <th>Trạng Thái</th>
+            <th class="text-end">Hành Động</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for app in appointments %}
+            <tr>
+              <td>
+                <span class="fw-bold text-primary font-monospace">{{ app.ma_lich_kham }}</span>
+                <div class="text-muted small" style="font-size: 0.72rem;">{{ app.created_at|date:"d/m/Y H:i" }}</div>
+              </td>
+              <td>
+                <strong>{{ app.benh_vien.ten_benh_vien }}</strong>
+                <div class="text-muted small"><i class="bi bi-geo-alt"></i> {{ app.benh_vien.tinh.ten_tinh }}</div>
+              </td>
+              <td>
+                <div>{{ app.bac_si.chuc_danh }} {{ app.bac_si.ho_ten }}</div>
+                <span class="badge bg-primary-subtle text-primary" style="font-size: 0.72rem;">{{ app.chuyen_khoa.ten_chuyen_khoa }}</span>
+              </td>
+              <td>
+                <div class="fw-bold text-success">{{ app.ngay_kham|date:"d/m/Y" }}</div>
+                <div class="text-muted small">{{ app.gio_kham|time:"H:i" }}</div>
+              </td>
+              <td>
+                <span class="badge badge-status-{{ app.trang_thai }} px-3 py-2 rounded-pill">
+                  {{ app.get_trang_thai_display }}
+                </span>
+                {% if app.ghi_chu_bac_si %}
+                  <div class="small text-muted fst-italic mt-1" style="max-width: 200px;">
+                    Chẩn đoán: {{ app.ghi_chu_bac_si }}
+                  </div>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <a href="{% url 'booking_success' app.id %}" class="btn btn-sm btn-outline-secondary" title="Xem phiếu khám">
+                  <i class="bi bi-receipt"></i> Phiếu
+                </a>
+                {% if app.trang_thai == 'Cho_xac_nhan' or app.trang_thai == 'Da_xac_nhan' %}
+                  <a href="{% url 'cancel_appointment' app.id %}" class="btn btn-sm btn-outline-danger" 
+                     onclick="return confirm('Bạn có chắc chắn muốn hủy lịch hẹn khám này không?')" title="Hủy cuộc hẹn">
+                    <i class="bi bi-x-circle"></i> Hủy
+                  </a>
+                {% endif %}
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="6" class="text-center py-5 text-muted">
+                <i class="bi bi-calendar-x fs-1 d-block mb-2"></i>
+                Bạn chưa có lịch hẹn khám nào.
+                <div class="mt-3">
+                  <a href="{% url 'booking_wizard' %}" class="btn btn-primary-custom btn-sm">Đặt lịch khám ngay</a>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

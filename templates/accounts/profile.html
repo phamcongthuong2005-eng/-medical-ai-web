@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+
+{% block title %}Hồ Sơ Cá Nhân - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{% url 'home' %}">Trang chủ</a></li>
+      <li class="breadcrumb-item active">Thông tin tài khoản</li>
+    </ol>
+  </nav>
+
+  <div class="row justify-content-center">
+    <div class="col-lg-8">
+      <div class="card card-custom p-4 p-md-5 border shadow-sm">
+        <div class="d-flex align-items-center gap-3 mb-4 pb-3 border-bottom">
+          <div class="p-3 bg-primary-subtle text-primary rounded-circle">
+            <i class="bi bi-person-gear fs-2"></i>
+          </div>
+          <div>
+            <h3 class="fw-bold mb-0">Hồ Sơ Cá Nhân</h3>
+            <span class="badge bg-primary text-white">{{ user.get_role_display }}</span>
+            <span class="text-muted small ms-2">Tên đăng nhập: <strong>{{ user.username }}</strong></span>
+          </div>
+        </div>
+
+        <form method="POST">
+          {% csrf_token %}
+          <div class="row g-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Họ và tên:</label>
+              {{ form.full_name }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Email:</label>
+              {{ form.email }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Số điện thoại:</label>
+              {{ form.phone }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Giới tính:</label>
+              {{ form.gender }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Ngày sinh:</label>
+              {{ form.date_of_birth }}
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Địa chỉ:</label>
+              {{ form.address }}
+            </div>
+          </div>
+
+          <div class="text-end pt-4 border-top mt-4">
+            <button type="submit" class="btn btn-primary-custom px-4">
+              <i class="bi bi-save me-1"></i> Lưu thay đổi
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

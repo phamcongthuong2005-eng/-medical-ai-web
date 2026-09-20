@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ doctor.chuc_danh }} {{ doctor.ho_ten }} - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{% url 'home' %}">Trang chủ</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'doctor_list' %}">Bác sĩ</a></li>
+      <li class="breadcrumb-item active">{{ doctor.ho_ten }}</li>
+    </ol>
+  </nav>
+
+  <div class="row g-4">
+    <!-- Cột trái: Hồ sơ Bác sĩ -->
+    <div class="col-lg-4">
+      <div class="card card-custom p-4 border text-center">
+        <img src="{{ doctor.anh_dai_dien }}" alt="{{ doctor.ho_ten }}" class="rounded-circle mx-auto mb-3 shadow" style="width: 140px; height: 140px; object-fit: cover;">
+        <h4 class="fw-bold text-dark mb-1">{{ doctor.chuc_danh }} {{ doctor.ho_ten }}</h4>
+        <span class="badge bg-primary-subtle text-primary mb-3">{{ doctor.chuyen_khoa.ten_chuyen_khoa }}</span>
+
+        <div class="text-start border-top pt-3 small">
+          <div class="mb-2"><i class="bi bi-hospital text-primary me-2"></i><strong>Bệnh viện:</strong> {{ doctor.benh_vien.ten_benh_vien }}</div>
+          <div class="mb-2"><i class="bi bi-geo-alt text-danger me-2"></i><strong>Tỉnh/TP:</strong> {{ doctor.benh_vien.tinh.ten_tinh }}</div>
+          <div class="mb-2"><i class="bi bi-award text-warning me-2"></i><strong>Kinh nghiệm:</strong> {{ doctor.so_nam_kinh_nghiem }} năm công tác</div>
+          <div class="mb-2"><i class="bi bi-cash-stack text-success me-2"></i><strong>Giá khám:</strong> {{ doctor.gia_kham|floatformat:0 }} VNĐ</div>
+        </div>
+
+        <a href="{% url 'booking_wizard' %}?doctor={{ doctor.id }}&hospital={{ doctor.benh_vien.id }}&specialty={{ doctor.chuyen_khoa.id }}&tinh={{ doctor.benh_vien.tinh.id }}" class="btn btn-primary-custom w-100 mt-4">
+          <i class="bi bi-calendar-check me-1"></i> Đặt lịch khám ngay
+        </a>
+      </div>
+    </div>
+
+    <!-- Cột phải: Tiểu sử & Lịch làm việc -->
+    <div class="col-lg-8">
+      <div class="card card-custom p-4 border mb-4">
+        <h5 class="fw-bold text-dark mb-3"><i class="bi bi-file-earmark-medical text-primary me-2"></i>Tiểu Sử & Chuyên Môn</h5>
+        <p class="text-secondary">{{ doctor.mo_ta }}</p>
+      </div>
+
+      <div class="card card-custom p-4 border">
+        <h5 class="fw-bold text-dark mb-3"><i class="bi bi-calendar-week text-primary me-2"></i>Lịch Làm Việc Dự Kiến (7 Ngày Tới)</h5>
+        <div class="row g-2">
+          {% for s in schedules %}
+            <div class="col-sm-6 col-md-4">
+              <div class="p-2 border rounded-3 bg-light text-center small">
+                <div class="fw-bold text-primary">{{ s.ngay|date:"d/m/Y (l)" }}</div>
+                <div class="text-muted">{{ s.gio_bat_dau|time:"H:i" }} - {{ s.gio_ket_thuc|time:"H:i" }}</div>
+                <a href="{% url 'booking_wizard' %}?doctor={{ doctor.id }}&hospital={{ doctor.benh_vien.id }}&specialty={{ doctor.chuyen_khoa.id }}&date={{ s.ngay|date:'Y-m-d' }}&time={{ s.gio_bat_dau|time:'H:i' }}" class="btn btn-sm btn-outline-primary mt-2 py-0" style="font-size: 0.75rem;">
+                  Chọn giờ này
+                </a>
+              </div>
+            </div>
+          {% empty %}
+            <div class="col-12 text-muted">Lịch làm việc đang được cập nhật thêm.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,143 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Trợ Lý AI Tư Vấn Sức Khỏe & Đặt Lịch Khám - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <div class="row g-4">
+    <!-- Cột Trái: Trợ Lý Info & Chủ Đề Mẫu -->
+    <div class="col-lg-4 col-md-5">
+      <div class="card card-custom p-4 border mb-4">
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <div class="p-3 bg-primary-subtle text-primary rounded-circle">
+            <i class="bi bi-robot fs-2"></i>
+          </div>
+          <div>
+            <h5 class="fw-bold mb-0">Trợ Lý Y Tế AI</h5>
+            <span class="badge bg-success-subtle text-success">● Đang hoạt động 24/7</span>
+          </div>
+        </div>
+        <p class="text-muted small">
+          Hệ thống AI thông minh hỗ trợ bạn phân tích sơ bộ các triệu chứng khó chịu, gợi ý chuyên khoa phù hợp và hướng dẫn lựa chọn bệnh viện theo từng tỉnh thành để đặt lịch khám ngay.
+        </p>
+        <div class="alert alert-warning border-0 small text-dark p-2 mb-0" style="font-size: 0.78rem;">
+          <i class="bi bi-shield-exclamation text-warning me-1"></i>
+          <strong>Lưu ý:</strong> Mọi tư vấn từ AI chỉ mang tính chất tham khảo y học, không thay thế cho kết luận của bác sĩ chuyên môn.
+        </div>
+      </div>
+
+      <!-- Chủ đề hỏi mẫu nhanh -->
+      <div class="card card-custom p-4 border">
+        <h6 class="fw-bold text-dark mb-3"><i class="bi bi-lightbulb text-warning me-2"></i>Câu Hỏi Triệu Chứng Phổ Biến</h6>
+        <div class="d-flex flex-column gap-2">
+          <button class="btn btn-sm btn-outline-secondary text-start" onclick="sendPromptFromSidebar('Tôi bị đau nửa đầu, chóng mặt và mất ngủ')">
+            💬 "Tôi bị đau nửa đầu, chóng mặt..."
+          </button>
+          <button class="btn btn-sm btn-outline-secondary text-start" onclick="sendPromptFromSidebar('Tôi bị đau vùng thượng vị dạ dày, ợ chua và đầy bụng')">
+            💬 "Tôi bị đau dạ dày, ợ chua..."
+          </button>
+          <button class="btn btn-sm btn-outline-secondary text-start" onclick="sendPromptFromSidebar('Tôi bị đau thắt ngực, tim đập nhanh và khó thở')">
+            💬 "Tôi bị đau tức ngực, khó thở..."
+          </button>
+          <button class="btn btn-sm btn-outline-secondary text-start" onclick="sendPromptFromSidebar('Con tôi 3 tuổi bị sốt cao và ho khò khè')">
+            💬 "Bé nhà tôi 3 tuổi sốt cao..."
+          </button>
+        </div>
+
+        <h6 class="fw-bold text-dark mt-4 mb-3"><i class="bi bi-geo-alt text-danger me-2"></i>Chọn Tỉnh Thành Khám</h6>
+        <div class="d-flex flex-wrap gap-2">
+          {% for p in provinces %}
+            <button class="btn btn-sm btn-light border text-primary" onclick="sendPromptFromSidebar('Tôi muốn đi khám ở {{ p.ten_tinh }}')">
+              📍 {{ p.ten_tinh }}
+            </button>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Cột Phải: Khung Hội Thoại AI Toàn Màn Hình -->
+    <div class="col-lg-8 col-md-7">
+      <div class="card card-custom border shadow-sm d-flex flex-column" style="height: 680px;">
+        
+        <!-- Header Chat -->
+        <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light rounded-top-4">
+          <div class="d-flex align-items-center gap-2">
+            <span class="p-2 bg-primary text-white rounded-circle"><i class="bi bi-chat-dots-fill"></i></span>
+            <div>
+              <h6 class="fw-bold mb-0">Hội Thoại Trực Tuyến Với AI</h6>
+              <small class="text-muted">Nhập câu hỏi hoặc triệu chứng bằng tiếng Việt tự nhiên</small>
+            </div>
+          </div>
+          <button class="btn btn-sm btn-outline-danger" onclick="clearPageChat()" title="Xóa hội thoại làm mới">
+            <i class="bi bi-trash3"></i> Làm mới
+          </button>
+        </div>
+
+        <!-- Vùng hiển thị tin nhắn -->
+        <div class="flex-grow-1 p-4 overflow-y-auto" id="pageChatMessages" style="background-color: #f8fafc; display: flex; flex-direction: column; gap: 14px;">
+          <!-- Tin nhắn sẽ được nạp động ở đây -->
+        </div>
+
+        <!-- Khung nhập liệu -->
+        <div class="p-3 bg-white border-top rounded-bottom-4">
+          <form id="pageChatForm" class="d-flex gap-2">
+            <input type="text" class="form-control form-control-lg" id="pageChatInput" 
+                   placeholder="Nhập triệu chứng của bạn (ví dụ: 'Tôi bị đau đầu', 'Muốn khám tại Đà Nẵng')..." autocomplete="off">
+            <button type="submit" class="btn btn-primary-custom px-4 d-flex align-items-center gap-2">
+              <span>Gửi</span> <i class="bi bi-send-fill"></i>
+            </button>
+          </form>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let fullSessionKey = localStorage.getItem('medical_ai_session_key') || 'sess_' + Math.random().toString(36).substring(2, 15);
+localStorage.setItem('medical_ai_session_key', fullSessionKey);
+
+const pageMessages = document.getElementById('pageChatMessages');
+const pageForm = document.getElementById('pageChatForm');
+const pageInput = document.getElementById('pageChatInput');
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Gửi tin nhắn chào mừng ban đầu
+  addAiMessageToContainer(pageMessages, {
+    reply: "👋 Xin chào bạn! Tôi là **Trợ lý Y tế AI** của Medical AI.\n\nTôi có thể hỗ trợ bạn:\n1. 🩺 **Phân tích triệu chứng** và tư vấn thông tin y tế tham khảo.\n2. 💡 **Gợi ý chuyên khoa** phù hợp.\n3. 🏥 **Chọn bệnh viện theo từng Tỉnh/Thành phố**.\n4. 📋 **Tự động điền Bảng Thông Tin Đặt Lịch ngay trong cuộc trò chuyện** để bạn chỉ cần bấm **'Đồng ý đặt lịch'**!\n\nBạn đang gặp vấn đề gì về sức khỏe? Hoặc bạn có thể chọn nhanh một tỉnh thành bên dưới:",
+    quick_replies: ['Tôi bị đau đầu chóng mặt', 'Tôi bị đau dạ dày', 'Tôi muốn khám ở Đà Nẵng', 'Tôi muốn khám ở Hà Nội', 'Tôi muốn khám ở TP. Hồ Chí Minh']
+  });
+
+  pageForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = pageInput.value.trim();
+    if (!text) return;
+
+    addUserMessageToContainer(pageMessages, text);
+    pageInput.value = '';
+    sendChatMessage(pageMessages, text, fullSessionKey);
+  });
+});
+
+function sendPromptFromSidebar(text) {
+  addUserMessageToContainer(pageMessages, text);
+  sendChatMessage(pageMessages, text, fullSessionKey);
+}
+
+function clearPageChat() {
+  if (confirm('Bạn muốn xóa đoạn hội thoại hiện tại và bắt đầu lại?')) {
+    pageMessages.innerHTML = '';
+    fullSessionKey = 'sess_' + Math.random().toString(36).substring(2, 15);
+    localStorage.setItem('medical_ai_session_key', fullSessionKey);
+    addAiMessageToContainer(pageMessages, {
+      reply: "👋 Hội thoại đã được làm mới. Bạn cần hỗ trợ tư vấn sức khỏe hay đặt lịch khám ở đâu?",
+      quick_replies: ['Tôi bị đau đầu', 'Đà Nẵng', 'Hà Nội', 'TP. Hồ Chí Minh']
+    });
+  }
+}
+</script>
+{% endblock %}

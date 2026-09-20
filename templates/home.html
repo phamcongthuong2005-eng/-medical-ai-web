@@ -1,0 +1,282 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Trang Chủ - Website Chatbox AI Đặt Lịch Khám & Tư Vấn Y Tế Thông Minh{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<section class="hero-section">
+  <div class="container">
+    <div class="row align-items-center g-5">
+      <div class="col-lg-7">
+        <div class="hero-badge mb-3">
+          <i class="bi bi-stars text-warning"></i> Ứng Dụng AI Vào Y Tế & Chăm Sóc Sức Khỏe
+        </div>
+        <h1 class="display-5 fw-extrabold text-dark mb-3" style="font-weight: 800; line-height: 1.25;">
+          Tư Vấn Y Tế Thông Minh & <span class="text-primary">Đặt Lịch Khám</span> Nhanh Chóng
+        </h1>
+        <p class="lead text-secondary mb-4" style="font-size: 1.1rem;">
+          Không còn lo lắng việc chọn sai chuyên khoa hay tìm kiếm bệnh viện xa xôi. Hãy trò chuyện với <strong>Chatbox AI</strong> để phân tích triệu chứng, gợi ý chuyên khoa, chọn bệnh viện theo từng tỉnh thành và đặt lịch bác sĩ chỉ trong vài phút.
+        </p>
+
+        <!-- Main Action Buttons -->
+        <div class="d-flex flex-wrap gap-3 mb-4">
+          <a href="{% url 'chat_page' %}" class="btn btn-primary-custom px-4 py-3 d-flex align-items-center gap-2">
+            <i class="bi bi-robot fs-5"></i>
+            <span>Chat Ngay Với AI Tư Vấn</span>
+          </a>
+          <a href="{% url 'booking_wizard' %}" class="btn btn-outline-custom px-4 py-3 d-flex align-items-center gap-2">
+            <i class="bi bi-calendar2-check fs-5"></i>
+            <span>Quy Trình Đặt Lịch 7 Bước</span>
+          </a>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="row g-3 pt-3 border-top">
+          <div class="col-auto me-4">
+            <div class="h4 fw-bold text-primary mb-0">{{ stats.provinces_count }}+</div>
+            <small class="text-muted">Tỉnh / Thành phố</small>
+          </div>
+          <div class="col-auto me-4">
+            <div class="h4 fw-bold text-primary mb-0">{{ stats.hospitals_count }}+</div>
+            <small class="text-muted">Bệnh viện liên kết</small>
+          </div>
+          <div class="col-auto me-4">
+            <div class="h4 fw-bold text-primary mb-0">{{ stats.doctors_count }}+</div>
+            <small class="text-muted">Bác sĩ chuyên khoa</small>
+          </div>
+          <div class="col-auto">
+            <div class="h4 fw-bold text-success mb-0">{{ stats.appointments_count }}+</div>
+            <small class="text-muted">Lịch khám thành công</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Hero Visual / Quick Diagnostic Box -->
+      <div class="col-lg-5">
+        <div class="card card-custom p-4 border-0 shadow-lg bg-white position-relative">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div class="d-flex align-items-center gap-2">
+              <span class="p-2 bg-primary-subtle text-primary rounded-circle"><i class="bi bi-robot fs-4"></i></span>
+              <div>
+                <h6 class="fw-bold mb-0">Thử Nghiệm AI Sàng Lọc Nhanh</h6>
+                <small class="text-muted">Nhập triệu chứng của bạn</small>
+              </div>
+            </div>
+            <span class="badge bg-success-subtle text-success">Trực tuyến</span>
+          </div>
+
+          <div class="bg-light p-3 rounded-3 mb-3 border">
+            <div class="small text-muted mb-2"><i class="bi bi-chat-quote-fill text-primary"></i> <strong>Câu hỏi mẫu:</strong></div>
+            <div class="d-flex flex-wrap gap-2">
+              <button class="btn btn-sm btn-outline-primary bg-white text-dark border" onclick="sendQuickMessage('Tôi bị đau đầu chóng mặt')">Tôi bị đau đầu chóng mặt</button>
+              <button class="btn btn-sm btn-outline-primary bg-white text-dark border" onclick="sendQuickMessage('Tôi bị đau dạ dày ợ chua')">Tôi bị đau dạ dày ợ chua</button>
+              <button class="btn btn-sm btn-outline-primary bg-white text-dark border" onclick="sendQuickMessage('Tôi muốn khám tại Đà Nẵng')">Khám tại Đà Nẵng</button>
+            </div>
+          </div>
+
+          <div class="input-group mb-3">
+            <input type="text" class="form-control" id="heroSymptomInput" placeholder="Ví dụ: Đau tức ngực, mệt mỏi...">
+            <button class="btn btn-primary" type="button" onclick="submitHeroSymptom()">
+              <i class="bi bi-send-fill me-1"></i> Hỏi AI
+            </button>
+          </div>
+
+          <div class="small text-muted text-center">
+            <i class="bi bi-shield-check text-success"></i> Miễn phí 100% • Bảo mật thông tin bệnh nhân
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 1: CHỌN TỈNH/THÀNH PHỐ -> HIỂN THỊ BỆNH VIỆN THUỘC TỈNH (Cốt lõi yêu cầu người dùng) -->
+<section class="py-5 bg-white">
+  <div class="container">
+    <div class="text-center max-w-700 mx-auto mb-5">
+      <span class="badge bg-primary-subtle text-primary px-3 py-2 rounded-pill fw-bold mb-2">ĐỊNH VỊ CƠ SỞ Y TẾ</span>
+      <h2 class="fw-bold">Bạn Muốn Khám Ở Tỉnh / Thành Phố Nào?</h2>
+      <p class="text-muted">Chọn tỉnh thành để lọc ngay danh sách các bệnh viện uy tín, bác sĩ chuyên khoa và lịch khám còn trống tại khu vực đó.</p>
+    </div>
+
+    <div class="row g-4 justify-content-center">
+      {% for prov in provinces %}
+        <div class="col-lg-2 col-md-4 col-6">
+          <a href="{% url 'hospital_list' %}?tinh={{ prov.id }}" class="text-decoration-none">
+            <div class="card card-custom text-center p-3 h-100 border transition hover-shadow">
+              <div class="mx-auto mb-2 p-3 bg-light rounded-circle text-primary" style="width: 60px; height: 60px; display: flex; align-items: center; justify-content: center;">
+                <i class="bi bi-geo-alt-fill fs-4"></i>
+              </div>
+              <h6 class="fw-bold text-dark mb-1">{{ prov.ten_tinh }}</h6>
+              <span class="badge bg-light text-primary border" style="font-size: 0.75rem;">
+                {{ prov.benh_viens.count }} Bệnh viện
+              </span>
+            </div>
+          </a>
+        </div>
+      {% endfor %}
+    </div>
+
+    <div class="text-center mt-4">
+      <a href="{% url 'hospital_list' %}" class="btn btn-sm btn-outline-secondary">
+        Xem tất cả bệnh viện trên toàn quốc <i class="bi bi-arrow-right ms-1"></i>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 2: QUY TRÌNH 7 BƯỚC ĐẶT LỊCH (Infographic) -->
+<section class="py-5" style="background-color: #f1f5f9;">
+  <div class="container">
+    <div class="text-center max-w-700 mx-auto mb-5">
+      <span class="badge bg-success-subtle text-success px-3 py-2 rounded-pill fw-bold mb-2">QUY TRÌNH CHUẨN</span>
+      <h2 class="fw-bold">Luồng Đặt Lịch Khám Thông Minh</h2>
+      <p class="text-muted">Từ lúc bạn cảm thấy không khỏe cho đến khi nhận được xác nhận lịch hẹn của bác sĩ.</p>
+    </div>
+
+    <div class="row g-3 text-center">
+      <div class="col-md col-6">
+        <div class="card card-custom p-3 h-100 bg-white border-0">
+          <div class="fs-2 text-primary mb-2"><i class="bi bi-chat-dots-fill"></i></div>
+          <h6 class="fw-bold mb-1">1. Triệu chứng</h6>
+          <small class="text-muted">Nhập vấn đề sức khỏe đang gặp phải</small>
+        </div>
+      </div>
+      <div class="col-md col-6">
+        <div class="card card-custom p-3 h-100 bg-white border-0">
+          <div class="fs-2 text-info mb-2"><i class="bi bi-cpu-fill"></i></div>
+          <h6 class="fw-bold mb-1">2. AI Gợi ý</h6>
+          <small class="text-muted">Phân tích và gợi ý chuyên khoa phù hợp</small>
+        </div>
+      </div>
+      <div class="col-md col-6">
+        <div class="card card-custom p-3 h-100 bg-white border-0">
+          <div class="fs-2 text-danger mb-2"><i class="bi bi-geo-alt-fill"></i></div>
+          <h6 class="fw-bold mb-1">3. Chọn Tỉnh</h6>
+          <small class="text-muted">Xác định tỉnh/thành muốn khám</small>
+        </div>
+      </div>
+      <div class="col-md col-6">
+        <div class="card card-custom p-3 h-100 bg-white border-0">
+          <div class="fs-2 text-warning mb-2"><i class="bi bi-hospital-fill"></i></div>
+          <h6 class="fw-bold mb-1">4. Chọn Bệnh viện</h6>
+          <small class="text-muted">Lọc bệnh viện thuộc tỉnh đã chọn</small>
+        </div>
+      </div>
+      <div class="col-md col-6">
+        <div class="card card-custom p-3 h-100 bg-white border-0">
+          <div class="fs-2 text-success mb-2"><i class="bi bi-person-fill"></i></div>
+          <h6 class="fw-bold mb-1">5. Chọn Bác sĩ</h6>
+          <small class="text-muted">Chọn bác sĩ chuyên khoa phụ trách</small>
+        </div>
+      </div>
+      <div class="col-md col-6">
+        <div class="card card-custom p-3 h-100 bg-white border-0">
+          <div class="fs-2 text-primary mb-2"><i class="bi bi-clock-fill"></i></div>
+          <h6 class="fw-bold mb-1">6. Ngày & Giờ</h6>
+          <small class="text-muted">Chọn khung giờ trống khả dụng</small>
+        </div>
+      </div>
+      <div class="col-md col-6">
+        <div class="card card-custom p-3 h-100 bg-white border-0">
+          <div class="fs-2 text-success mb-2"><i class="bi bi-check-circle-fill"></i></div>
+          <h6 class="fw-bold mb-1">7. Xác Nhận</h6>
+          <small class="text-muted">Lưu vào MySQL & Bác sĩ tiếp nhận</small>
+        </div>
+      </div>
+    </div>
+
+    <div class="text-center mt-4">
+      <a href="{% url 'booking_wizard' %}" class="btn btn-primary-custom px-4 py-2">
+        Bắt đầu đặt lịch ngay <i class="bi bi-arrow-right ms-1"></i>
+      </a>
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 3: BỆNH VIỆN NỔI BẬT -->
+<section class="py-5 bg-white">
+  <div class="container">
+    <div class="d-flex justify-content-between align-items-end mb-4">
+      <div>
+        <span class="badge bg-primary-subtle text-primary px-3 py-2 rounded-pill fw-bold mb-2">CƠ SỞ Y TẾ HÀNG ĐẦU</span>
+        <h2 class="fw-bold mb-0">Bệnh Viện Tiêu Biểu</h2>
+      </div>
+      <a href="{% url 'hospital_list' %}" class="btn btn-outline-primary btn-sm">Xem tất cả <i class="bi bi-arrow-right"></i></a>
+    </div>
+
+    <div class="row g-4">
+      {% for hospital in featured_hospitals %}
+        <div class="col-lg-4 col-md-6">
+          <div class="card card-custom h-100 overflow-hidden border">
+            <img src="{{ hospital.hinh_anh }}" class="card-img-top" alt="{{ hospital.ten_benh_vien }}" style="height: 200px; object-fit: cover;">
+            <div class="card-body d-flex flex-column">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span class="badge bg-primary-subtle text-primary"><i class="bi bi-geo-alt"></i> {{ hospital.tinh.ten_tinh }}</span>
+                <span class="text-success small fw-semibold"><i class="bi bi-check-circle-fill"></i> Đang nhận lịch</span>
+              </div>
+              <h5 class="card-title fw-bold text-dark mb-2">{{ hospital.ten_benh_vien }}</h5>
+              <p class="card-text text-muted small mb-3 flex-grow-1">
+                <i class="bi bi-pin-map-fill text-danger me-1"></i> {{ hospital.dia_chi }}
+              </p>
+              <div class="d-flex justify-content-between align-items-center pt-3 border-top">
+                <span class="text-muted small"><i class="bi bi-telephone text-primary me-1"></i> {{ hospital.so_dien_thoai }}</span>
+                <a href="{% url 'booking_wizard' %}?hospital={{ hospital.id }}" class="btn btn-sm btn-primary-custom">Đặt lịch</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<!-- SECTION 4: ĐỘI NGŨ BÁC SĨ -->
+<section class="py-5" style="background-color: #f8fafc;">
+  <div class="container">
+    <div class="d-flex justify-content-between align-items-end mb-4">
+      <div>
+        <span class="badge bg-info-subtle text-info px-3 py-2 rounded-pill fw-bold mb-2">ĐỘI NGŨ CHUYÊN MÔN</span>
+        <h2 class="fw-bold mb-0">Bác Sĩ Chuyên Khoa Giàu Kinh Nghiệm</h2>
+      </div>
+      <a href="{% url 'doctor_list' %}" class="btn btn-outline-primary btn-sm">Xem tất cả bác sĩ <i class="bi bi-arrow-right"></i></a>
+    </div>
+
+    <div class="row g-4">
+      {% for doc in featured_doctors %}
+        <div class="col-lg-3 col-md-6">
+          <div class="card card-custom h-100 text-center p-3 border">
+            <img src="{{ doc.anh_dai_dien }}" class="rounded-circle mx-auto mb-3 shadow-sm" alt="{{ doc.ho_ten }}" style="width: 110px; height: 110px; object-fit: cover;">
+            <h6 class="fw-bold mb-1">{{ doc.chuc_danh }} {{ doc.ho_ten }}</h6>
+            <span class="badge bg-primary-subtle text-primary mb-2">{{ doc.chuyen_khoa.ten_chuyen_khoa }}</span>
+            <p class="small text-muted mb-2">{{ doc.benh_vien.ten_benh_vien }}</p>
+            <div class="small text-secondary mb-3"><i class="bi bi-award text-warning"></i> {{ doc.so_nam_kinh_nghiem }} năm kinh nghiệm</div>
+            <a href="{% url 'booking_wizard' %}?doctor={{ doc.id }}" class="btn btn-sm btn-outline-primary w-100 mt-auto">Đặt lịch khám</a>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function submitHeroSymptom() {
+  const input = document.getElementById('heroSymptomInput');
+  const text = input.value.trim();
+  if (!text) return;
+  // Mở chat box và gửi tin nhắn
+  const trigger = document.getElementById('chatTrigger');
+  const box = document.getElementById('chatBox');
+  if (box && !box.classList.contains('open')) {
+    box.classList.add('open');
+  }
+  if (window.sendQuickMessage) {
+    window.sendQuickMessage(text);
+  }
+  input.value = '';
+}
+</script>
+{% endblock %}

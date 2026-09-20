@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+
+{% block title %}Bảng Điều Khiển Bác Sĩ - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <!-- Header -->
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
+    <div>
+      <h2 class="fw-bold mb-1"><i class="bi bi-speedometer2 text-primary me-2"></i>Bảng Điều Khiển Bác Sĩ</h2>
+      <p class="text-muted mb-0">
+        Xin chào <strong>{{ doctor.chuc_danh }} {{ doctor.ho_ten }}</strong> • Bệnh viện: {{ doctor.benh_vien.ten_benh_vien }}
+      </p>
+    </div>
+    <span class="badge bg-success-subtle text-success p-2 fs-6">
+      <i class="bi bi-shield-check"></i> Quyền Bác sĩ chuyên khoa
+    </span>
+  </div>
+
+  <!-- Thống kê nhanh -->
+  <div class="row g-3 mb-4">
+    <div class="col-md col-6">
+      <a href="?status=all" class="text-decoration-none">
+        <div class="card card-custom p-3 border text-center {% if status_filter == 'all' %}border-primary bg-primary-subtle{% endif %}">
+          <div class="h3 fw-bold text-primary mb-0">{{ stats.total }}</div>
+          <small class="text-muted fw-semibold">Tổng số lịch</small>
+        </div>
+      </a>
+    </div>
+    <div class="col-md col-6">
+      <a href="?status=Cho_xac_nhan" class="text-decoration-none">
+        <div class="card card-custom p-3 border text-center {% if status_filter == 'Cho_xac_nhan' %}border-warning bg-warning-subtle{% endif %}">
+          <div class="h3 fw-bold text-warning mb-0">{{ stats.cho_xac_nhan }}</div>
+          <small class="text-muted fw-semibold">Chờ xác nhận</small>
+        </div>
+      </a>
+    </div>
+    <div class="col-md col-6">
+      <a href="?status=Da_xac_nhan" class="text-decoration-none">
+        <div class="card card-custom p-3 border text-center {% if status_filter == 'Da_xac_nhan' %}border-success bg-success-subtle{% endif %}">
+          <div class="h3 fw-bold text-success mb-0">{{ stats.da_xac_nhan }}</div>
+          <small class="text-muted fw-semibold">Đã xác nhận</small>
+        </div>
+      </a>
+    </div>
+    <div class="col-md col-6">
+      <a href="?status=Da_kham" class="text-decoration-none">
+        <div class="card card-custom p-3 border text-center {% if status_filter == 'Da_kham' %}border-info bg-info-subtle{% endif %}">
+          <div class="h3 fw-bold text-info mb-0">{{ stats.da_kham }}</div>
+          <small class="text-muted fw-semibold">Đã khám xong</small>
+        </div>
+      </a>
+    </div>
+    <div class="col-md col-6">
+      <a href="?status=Da_huy" class="text-decoration-none">
+        <div class="card card-custom p-3 border text-center {% if status_filter == 'Da_huy' %}border-danger bg-danger-subtle{% endif %}">
+          <div class="h3 fw-bold text-danger mb-0">{{ stats.da_huy }}</div>
+          <small class="text-muted fw-semibold">Đã hủy</small>
+        </div>
+      </a>
+    </div>
+  </div>
+
+  <!-- Danh sách lịch khám -->
+  <div class="card card-custom border overflow-hidden">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+      <h5 class="fw-bold mb-0">Danh Sách Lịch Khám Cần Xử Lý</h5>
+      <span class="text-muted small">Cập nhật thời gian thực</span>
+    </div>
+
+    <div class="table-responsive">
+      <table class="table table-hover align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Mã Đặt Lịch</th>
+            <th>Bệnh Nhân</th>
+            <th>Số Điện Thoại</th>
+            <th>Thời Gian Khám</th>
+            <th>Triệu Chứng / Lý Do</th>
+            <th>Trạng Thái</th>
+            <th class="text-end">Hành Động</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for app in appointments %}
+            <tr>
+              <td>
+                <span class="fw-bold text-primary font-monospace">{{ app.ma_lich_kham }}</span>
+              </td>
+              <td>
+                <strong>{{ app.ten_benh_nhan|default:app.benh_nhan.username }}</strong>
+              </td>
+              <td>{{ app.so_dien_thoai|default:"Chưa cung cấp" }}</td>
+              <td>
+                <div class="fw-semibold">{{ app.ngay_kham|date:"d/m/Y" }}</div>
+                <small class="text-muted">{{ app.gio_kham|time:"H:i" }}</small>
+              </td>
+              <td>
+                <div class="small text-dark" style="max-width: 250px;">{{ app.trieu_chung|default:app.ly_do_kham }}</div>
+                {% if app.ghi_chu_bac_si %}
+                  <div class="small text-muted fst-italic">BS ghi: {{ app.ghi_chu_bac_si }}</div>
+                {% endif %}
+              </td>
+              <td>
+                <span class="badge badge-status-{{ app.trang_thai }} px-3 py-2 rounded-pill">
+                  {{ app.get_trang_thai_display }}
+                </span>
+              </td>
+              <td class="text-end">
+                <div class="d-inline-flex gap-1">
+                  {% if app.trang_thai == 'Cho_xac_nhan' %}
+                    <form method="POST" action="{% url 'update_appointment_status' app.id %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="confirm">
+                      <button type="submit" class="btn btn-sm btn-success" title="Xác nhận lịch khám">
+                        <i class="bi bi-check-lg"></i> Duyệt
+                      </button>
+                    </form>
+                    <form method="POST" action="{% url 'update_appointment_status' app.id %}" onsubmit="return confirm('Bạn chắc chắn muốn hủy lịch này?')">
+                      {% csrf_token %}
+                      <input type="hidden" name="action" value="cancel">
+                      <button type="submit" class="btn btn-sm btn-outline-danger" title="Hủy lịch">
+                        <i class="bi bi-x-lg"></i>
+                      </button>
+                    </form>
+                  {% elif app.trang_thai == 'Da_xac_nhan' %}
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#completeModal{{ app.id }}">
+                      <i class="bi bi-clipboard2-check"></i> Hoàn thành khám
+                    </button>
+                  {% else %}
+                    <span class="text-muted small">Đã đóng</span>
+                  {% endif %}
+                </div>
+
+                <!-- Modal Ghi chú & Hoàn tất khám -->
+                <div class="modal fade text-start" id="completeModal{{ app.id }}" tabindex="-1">
+                  <div class="modal-dialog">
+                    <div class="modal-content">
+                      <form method="POST" action="{% url 'update_appointment_status' app.id %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="complete">
+                        <div class="modal-header">
+                          <h5 class="modal-title fw-bold">Hoàn Thành Khám Bệnh [{{ app.ma_lich_kham }}]</h5>
+                          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                          <p>Bệnh nhân: <strong>{{ app.ten_benh_nhan }}</strong></p>
+                          <div class="mb-3">
+                            <label class="form-label fw-semibold">Kết quả chẩn đoán / Lời dặn của bác sĩ:</label>
+                            <textarea name="ghi_chu_bac_si" class="form-control" rows="4" placeholder="Nhập tóm tắt chẩn đoán, toa thuốc hoặc lịch tái khám..."></textarea>
+                          </div>
+                        </div>
+                        <div class="modal-footer">
+                          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
+                          <button type="submit" class="btn btn-primary">Lưu & Hoàn Tất</button>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+
+              </td>
+            </tr>
+          {% empty %}
+            <tr>
+              <td colspan="7" class="text-center py-4 text-muted">
+                Không có lịch khám nào trong danh mục này.
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

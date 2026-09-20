@@ -1,0 +1,97 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ hospital.ten_benh_vien }} - Medical AI{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <!-- Breadcrumb -->
+  <nav aria-label="breadcrumb">
+    <ol class="breadcrumb small">
+      <li class="breadcrumb-item"><a href="{% url 'home' %}">Trang chủ</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'hospital_list' %}">Bệnh viện</a></li>
+      <li class="breadcrumb-item"><a href="{% url 'hospital_list' %}?tinh={{ hospital.tinh.id }}">{{ hospital.tinh.ten_tinh }}</a></li>
+      <li class="breadcrumb-item active">{{ hospital.ten_benh_vien }}</li>
+    </ol>
+  </nav>
+
+  <!-- Hospital Info Banner -->
+  <div class="card card-custom overflow-hidden border mb-4">
+    <div class="row g-0">
+      <div class="col-lg-5">
+        <img src="{{ hospital.hinh_anh }}" alt="{{ hospital.ten_benh_vien }}" class="w-100 h-100" style="min-height: 280px; object-fit: cover;">
+      </div>
+      <div class="col-lg-7 p-4 p-md-5 d-flex flex-column justify-content-between">
+        <div>
+          <span class="badge bg-primary mb-2"><i class="bi bi-geo-alt"></i> {{ hospital.tinh.ten_tinh }}</span>
+          <h2 class="fw-bold text-dark mb-2">{{ hospital.ten_benh_vien }}</h2>
+          <p class="text-muted mb-3"><i class="bi bi-pin-map text-danger me-1"></i> {{ hospital.dia_chi }}</p>
+          <div class="row g-2 mb-3 text-secondary small">
+            <div class="col-sm-6"><i class="bi bi-telephone text-primary me-1"></i> Hotline: <strong>{{ hospital.so_dien_thoai }}</strong></div>
+            <div class="col-sm-6"><i class="bi bi-envelope text-primary me-1"></i> Email: {{ hospital.email|default:"Đang cập nhật" }}</div>
+            {% if hospital.website %}
+              <div class="col-12"><i class="bi bi-globe text-primary me-1"></i> Website: <a href="{{ hospital.website }}" target="_blank" class="text-decoration-none">{{ hospital.website }}</a></div>
+            {% endif %}
+          </div>
+          <p class="text-secondary small">{{ hospital.mo_ta }}</p>
+        </div>
+
+        <div class="pt-3 border-top d-flex gap-3">
+          <a href="{% url 'booking_wizard' %}?hospital={{ hospital.id }}&tinh={{ hospital.tinh.id }}" class="btn btn-primary-custom px-4">
+            <i class="bi bi-calendar2-plus me-1"></i> Đặt lịch khám tại bệnh viện này
+          </a>
+          <a href="tel:{{ hospital.so_dien_thoai }}" class="btn btn-outline-secondary">
+            <i class="bi bi-telephone"></i> Gọi tư vấn
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Danh sách Chuyên khoa cung cấp -->
+  <div class="card card-custom p-4 border mb-4">
+    <h5 class="fw-bold mb-3"><i class="bi bi-list-check text-primary me-2"></i>Các Chuyên Khoa Tại Bệnh Viện</h5>
+    <div class="row g-3">
+      {% for ck in hospital.chuyen_khoas.all %}
+        <div class="col-md-4 col-sm-6">
+          <div class="p-3 bg-light rounded-3 border h-100 d-flex align-items-center gap-3">
+            <i class="bi {{ ck.bieu_tuong|default:'bi-heart-pulse' }} fs-3 text-primary"></i>
+            <div>
+              <div class="fw-bold text-dark">{{ ck.ten_chuyen_khoa }}</div>
+              <small class="text-muted">{{ ck.mo_ta|truncatechars:45 }}</small>
+            </div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Danh sách Bác sĩ tại Bệnh viện -->
+  <div class="card card-custom p-4 border">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+      <h5 class="fw-bold mb-0"><i class="bi bi-person-badge text-primary me-2"></i>Đội Ngũ Bác Sĩ Tại Bệnh Viện</h5>
+      <span class="badge bg-light text-dark border">{{ doctors.count }} Bác sĩ</span>
+    </div>
+
+    <div class="row g-4">
+      {% for doc in doctors %}
+        <div class="col-lg-4 col-md-6">
+          <div class="card p-3 border rounded-3 h-100 d-flex flex-column text-center">
+            <img src="{{ doc.anh_dai_dien }}" class="rounded-circle mx-auto mb-2 shadow-sm" style="width: 80px; height: 80px; object-fit: cover;">
+            <h6 class="fw-bold mb-1">{{ doc.chuc_danh }} {{ doc.ho_ten }}</h6>
+            <span class="badge bg-primary-subtle text-primary mb-2 mx-auto">{{ doc.chuyen_khoa.ten_chuyen_khoa }}</span>
+            <div class="small text-muted mb-2"><i class="bi bi-clock-history"></i> {{ doc.so_nam_kinh_nghiem }} năm kinh nghiệm</div>
+            <div class="text-success fw-bold small mb-3">Phí khám: {{ doc.gia_kham|floatformat:0 }} VNĐ</div>
+            <a href="{% url 'booking_wizard' %}?hospital={{ hospital.id }}&doctor={{ doc.id }}&specialty={{ doc.chuyen_khoa.id }}&tinh={{ hospital.tinh.id }}" class="btn btn-sm btn-primary-custom w-100 mt-auto">
+              Đặt lịch với bác sĩ
+            </a>
+          </div>
+        </div>
+      {% empty %}
+        <div class="col-12 text-muted py-3 text-center">
+          Chưa có bác sĩ liên kết công khai tại bệnh viện này.
+        </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endblock %}
