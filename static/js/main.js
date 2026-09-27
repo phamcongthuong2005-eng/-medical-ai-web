@@ -475,8 +475,16 @@ function renderBookingSummaryTable(container) {
   container.scrollTop = container.scrollHeight;
 }
 
-// Bước E: Khách hàng click "ĐỒNG Ý ĐẶT LỊCH" ➔ Lưu vào MySQL
 window.chatConfirmBooking = function(buttonElement) {
+  if (!chatBookingState.hospitalId || !chatBookingState.doctorId || !chatBookingState.date || !chatBookingState.time) {
+    alert('⚠️ Vui lòng chọn đầy đủ Bệnh viện, Bác sĩ và Khung giờ khám trước khi xác nhận!');
+    return;
+  }
+  if (!chatBookingState.fullName || !chatBookingState.phone) {
+    alert('⚠️ Vui lòng cung cấp đầy đủ Họ tên và Số điện thoại liên hệ!');
+    return;
+  }
+
   if (buttonElement) {
     buttonElement.disabled = true;
     buttonElement.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Đang lưu vào hệ thống...';
