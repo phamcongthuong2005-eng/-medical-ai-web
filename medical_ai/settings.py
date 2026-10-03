@@ -5,7 +5,11 @@ Hỗ trợ cả môi trường Local (MySQL máy tính) và Cloud Deployment (Ra
 
 from pathlib import Path
 import os
-import dj_database_url
+
+try:
+    import dj_database_url
+except ImportError:
+    dj_database_url = None
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -74,7 +78,7 @@ TEMPLATES = [
 WSGI_APPLICATION = 'medical_ai.wsgi.application'
 
 # Database Configuration (Tự động nhận diện Railway / Render / Local MySQL)
-if os.environ.get('DATABASE_URL') or os.environ.get('MYSQL_URL'):
+if (os.environ.get('DATABASE_URL') or os.environ.get('MYSQL_URL')) and dj_database_url:
     # Kết nối Database từ Cloud Environment Variables (Railway / Render / Aiven)
     db_url = os.environ.get('DATABASE_URL') or os.environ.get('MYSQL_URL')
     DATABASES = {
