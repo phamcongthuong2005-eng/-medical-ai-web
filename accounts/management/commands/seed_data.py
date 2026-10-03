@@ -509,8 +509,8 @@ class Command(BaseCommand):
                     bacsi.anh_dai_dien = d['anh']
                     bacsi.save()
 
-                # Tạo Lịch làm việc 14 ngày tới cho mỗi bác sĩ
-                for day_offset in range(0, 14):
+                # Tạo Lịch làm việc 30 ngày tới cho mỗi bác sĩ
+                for day_offset in range(0, 30):
                     slot_date = today + timedelta(days=day_offset)
                     # Tránh chủ nhật
                     if slot_date.weekday() == 6:
@@ -529,6 +529,6 @@ class Command(BaseCommand):
                         )
                 created_doctors_count += 1
 
-        self.stdout.write(self.style.SUCCESS(f' Đã nạp {created_doctors_count} Bác sĩ (cả nam lẫn nữ, mỗi chuyên khoa 4 bác sĩ) kèm lịch làm việc 14 ngày tới.'))
+        self.stdout.write(self.style.SUCCESS(f' Đã nạp {created_doctors_count} Bác sĩ (cả nam lẫn nữ, mỗi chuyên khoa 4 bác sĩ) kèm lịch làm việc 30 ngày tới.'))
 
         self.stdout.write(self.style.SUCCESS('=== NẠP DỮ LIỆU MẪU TOÀN DIỆN THÀNH CÔNG! ==='))

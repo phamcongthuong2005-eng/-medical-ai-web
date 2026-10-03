@@ -111,7 +111,7 @@ def api_create_appointment(request):
             return JsonResponse({'status': 'error', 'message': 'Định dạng ngày hoặc giờ không hợp lệ'}, status=400)
 
         # Xác định user đặt lịch
-        if request.user.is_authenticated:
+        if hasattr(request, 'user') and request.user.is_authenticated:
             user = request.user
             if not full_name:
                 full_name = user.full_name or user.username

@@ -167,9 +167,9 @@ HEALTH_KNOWLEDGE_BASE = [
             "   - Dùng khăn mềm thấm **nước ấm** (nhiệt độ nước thấp hơn thân nhiệt 2 độ) để lau chườm tại trán, 2 nách và 2 bẹn. *(Tuyệt đối không chườm đá lạnh vì gây co mạch)*.\n\n"
             "2. **Bù nước & Điện giải:**\n"
             "   - Uống nhiều nước lọc, nước oresol (pha đúng tỉ lệ hướng dẫn), nước cam, nước dừa.\n\n"
-            "3. **Dùng thuốc hạ sốt (khi sốt $\ge 38.5^\circ C$):**\n"
-            "   - Paracetamol liều $10 - 15mg / kg$ cân nặng mỗi lần, cách nhau $4 - 6$ tiếng (không quá 4 lần/ngày).\n\n"
-            "⚠️ **Cần đến bệnh viện ngay nếu:** Sốt cao trên $39.5^\circ C$ không hạ, co giật, khó thở, nôn ói liên tục hoặc phát ban li bì."
+            "3. **Dùng thuốc hạ sốt (khi sốt >= 38.5°C):**\n"
+            "   - Paracetamol liều 10 - 15mg/kg cân nặng mỗi lần, cách nhau 4 - 6 tiếng (không quá 4 lần/ngày).\n\n"
+            "⚠️ **Cần đến bệnh viện ngay nếu:** Sốt cao trên 39.5°C không hạ, co giật, khó thở, nôn ói liên tục hoặc phát ban li bì."
         )
     },
     {
@@ -295,6 +295,36 @@ def call_openai_medical_chat(user_message):
     return None
 
 
+def get_doctor_active_slots(doctor, max_slots=8):
+    """
+    Lấy danh sách các slot khám đang hoạt động của bác sĩ.
+    Nếu DB tạm thời chưa có, tự động tạo các khung giờ chuẩn cho các ngày làm việc tới.
+    """
+    today = timezone.now().date()
+    slots_qs = LichLamViec.objects.filter(bac_si=doctor, ngay__gte=today, trang_thai=True).order_by('ngay', 'gio_bat_dau')[:max_slots]
+    slots_list = []
+    for s in slots_qs:
+        slots_list.append({
+            'date': s.ngay.strftime('%Y-%m-%d'),
+            'date_display': s.ngay.strftime('%d/%m'),
+            'start_time': s.gio_bat_dau.strftime('%H:%M'),
+            'time_slot': f"{s.gio_bat_dau.strftime('%H:%M')} - {s.gio_ket_thuc.strftime('%H:%M')}"
+        })
+
+    if not slots_list:
+        next_date = today + timedelta(days=1)
+        if next_date.weekday() == 6:
+            next_date = next_date + timedelta(days=1)
+        for t in ['08:00', '09:00', '10:00', '14:00', '15:00', '16:00']:
+            slots_list.append({
+                'date': next_date.strftime('%Y-%m-%d'),
+                'date_display': next_date.strftime('%d/%m'),
+                'start_time': t,
+                'time_slot': f"{t} - {int(t[:2])+1:02d}:00"
+            })
+    return slots_list
+
+
 def process_medical_chat(user_message, session=None):
     """
     Hàm xử lý tin nhắn trung tâm:
@@ -364,17 +394,7 @@ def process_medical_chat(user_message, session=None):
 
         doc_list = []
         for d in doctors:
-            today = timezone.now().date()
-            slots_qs = LichLamViec.objects.filter(bac_si=d, ngay__gte=today, trang_thai=True).order_by('ngay', 'gio_bat_dau')[:8]
-            slots_list = []
-            for s in slots_qs:
-                slots_list.append({
-                    'date': s.ngay.strftime('%Y-%m-%d'),
-                    'date_display': s.ngay.strftime('%d/%m'),
-                    'start_time': s.gio_bat_dau.strftime('%H:%M'),
-                    'time_slot': f"{s.gio_bat_dau.strftime('%H:%M')} - {s.gio_ket_thuc.strftime('%H:%M')}"
-                })
-
+            slots_list = get_doctor_active_slots(d, max_slots=8)
             gender_label = 'Bác sĩ Nam' if getattr(d.user, 'gender', 'nam') == 'nam' else 'Bác sĩ Nữ'
             doc_list.append({
                 'id': d.id,
@@ -467,17 +487,7 @@ def process_medical_chat(user_message, session=None):
 
         doc_list = []
         for d in specialty_doctors:
-            today = timezone.now().date()
-            slots_qs = LichLamViec.objects.filter(bac_si=d, ngay__gte=today, trang_thai=True).order_by('ngay', 'gio_bat_dau')[:8]
-            slots_list = []
-            for s in slots_qs:
-                slots_list.append({
-                    'date': s.ngay.strftime('%Y-%m-%d'),
-                    'date_display': s.ngay.strftime('%d/%m'),
-                    'start_time': s.gio_bat_dau.strftime('%H:%M'),
-                    'time_slot': f"{s.gio_bat_dau.strftime('%H:%M')} - {s.gio_ket_thuc.strftime('%H:%M')}"
-                })
-
+            slots_list = get_doctor_active_slots(d, max_slots=8)
             gender_label = 'Bác sĩ Nam' if getattr(d.user, 'gender', 'nam') == 'nam' else 'Bác sĩ Nữ'
             doc_list.append({
                 'id': d.id,

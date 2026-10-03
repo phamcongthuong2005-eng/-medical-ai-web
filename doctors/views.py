@@ -3,7 +3,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
 from django.utils import timezone
-from datetime import datetime
+from datetime import datetime, time, timedelta
 from .models import BacSi, LichLamViec
 from hospitals.models import TinhThanh, BenhVien, ChuyenKhoa
 from appointments.models import LichKham
@@ -186,7 +186,8 @@ def api_doctors_by_criteria(request):
 
 def api_doctor_slots(request, doctor_id):
     """
-    API lấy các ngày và khung giờ khám còn trống của bác sĩ
+    API lấy các ngày và khung giờ khám còn trống của bác sĩ.
+    Nếu chưa có bản ghi trong DB cho ngày đó, tự động tạo các khung giờ chuẩn.
     """
     date_str = request.GET.get('date')
     doctor = get_object_or_404(BacSi, pk=doctor_id)
@@ -194,6 +195,7 @@ def api_doctor_slots(request, doctor_id):
     today = timezone.now().date()
     schedules = LichLamViec.objects.filter(bac_si=doctor, trang_thai=True)
 
+    target_date = None
     if date_str:
         try:
             target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
@@ -203,28 +205,70 @@ def api_doctor_slots(request, doctor_id):
     else:
         schedules = schedules.filter(ngay__gte=today)
 
-    # Đếm số lượng đã đặt trên từng slot để tính slot trống
     result = []
-    for s in schedules:
-        booked_count = LichKham.objects.filter(
-            bac_si=doctor,
-            ngay_kham=s.ngay,
-            gio_kham=s.gio_bat_dau,
-            trang_thai__in=['Cho_xac_nhan', 'Da_xac_nhan']
-        ).count()
+    default_time_slots = [
+        (time(8, 0), time(9, 0)),
+        (time(9, 0), time(10, 0)),
+        (time(10, 0), time(11, 0)),
+        (time(14, 0), time(15, 0)),
+        (time(15, 0), time(16, 0)),
+        (time(16, 0), time(17, 0)),
+    ]
 
-        available_seats = max(0, s.so_luong_benh_nhan - booked_count)
-        result.append({
-            'schedule_id': s.id,
-            'date': s.ngay.strftime('%Y-%m-%d'),
-            'date_display': s.ngay.strftime('%d/%m/%Y'),
-            'start_time': s.gio_bat_dau.strftime('%H:%M'),
-            'end_time': s.gio_ket_thuc.strftime('%H:%M'),
-            'time_slot': f"{s.gio_bat_dau.strftime('%H:%M')} - {s.gio_ket_thuc.strftime('%H:%M')}",
-            'max_patients': s.so_luong_benh_nhan,
-            'booked_patients': booked_count,
-            'available': available_seats > 0,
-            'remaining': available_seats,
-        })
+    # Nếu DB có lịch làm việc
+    if schedules.exists():
+        for s in schedules:
+            booked_count = LichKham.objects.filter(
+                bac_si=doctor,
+                ngay_kham=s.ngay,
+                gio_kham=s.gio_bat_dau,
+                trang_thai__in=['Cho_xac_nhan', 'Da_xac_nhan']
+            ).count()
+
+            available_seats = max(0, s.so_luong_benh_nhan - booked_count)
+            result.append({
+                'schedule_id': s.id,
+                'date': s.ngay.strftime('%Y-%m-%d'),
+                'date_display': s.ngay.strftime('%d/%m/%Y'),
+                'start_time': s.gio_bat_dau.strftime('%H:%M'),
+                'end_time': s.gio_ket_thuc.strftime('%H:%M'),
+                'time_slot': f"{s.gio_bat_dau.strftime('%H:%M')} - {s.gio_ket_thuc.strftime('%H:%M')}",
+                'max_patients': s.so_luong_benh_nhan,
+                'booked_patients': booked_count,
+                'available': available_seats > 0,
+                'remaining': available_seats,
+            })
+    else:
+        # Tự động sinh khung giờ khám nếu ngày đó chưa có bản ghi DB (loại trừ Chủ nhật)
+        date_to_gen = target_date or (today + timedelta(days=1))
+        if date_to_gen.weekday() != 6: # không phải Chủ Nhật
+            for start_t, end_t in default_time_slots:
+                # Tự tạo trong DB để đồng bộ
+                s, _ = LichLamViec.objects.get_or_create(
+                    bac_si=doctor,
+                    ngay=date_to_gen,
+                    gio_bat_dau=start_t,
+                    gio_ket_thuc=end_t,
+                    defaults={'so_luong_benh_nhan': 4, 'trang_thai': True}
+                )
+                booked_count = LichKham.objects.filter(
+                    bac_si=doctor,
+                    ngay_kham=date_to_gen,
+                    gio_kham=start_t,
+                    trang_thai__in=['Cho_xac_nhan', 'Da_xac_nhan']
+                ).count()
+                available_seats = max(0, 4 - booked_count)
+                result.append({
+                    'schedule_id': s.id,
+                    'date': date_to_gen.strftime('%Y-%m-%d'),
+                    'date_display': date_to_gen.strftime('%d/%m/%Y'),
+                    'start_time': start_t.strftime('%H:%M'),
+                    'end_time': end_t.strftime('%H:%M'),
+                    'time_slot': f"{start_t.strftime('%H:%M')} - {end_t.strftime('%H:%M')}",
+                    'max_patients': 4,
+                    'booked_patients': booked_count,
+                    'available': available_seats > 0,
+                    'remaining': available_seats,
+                })
 
     return JsonResponse({'status': 'success', 'doctor_id': doctor_id, 'data': result})

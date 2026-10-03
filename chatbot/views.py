@@ -39,7 +39,7 @@ def api_send_message(request):
         if not session_key:
             session_key = str(uuid.uuid4())
 
-        user = request.user if request.user.is_authenticated else None
+        user = request.user if hasattr(request, 'user') and request.user.is_authenticated else None
         session_obj, _ = ChatSession.objects.get_or_create(
             session_key=session_key,
             defaults={'user': user}
