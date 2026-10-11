@@ -347,6 +347,90 @@ def process_medical_chat(user_message, session=None):
 
     # ================= 1. KIỂM TRA INTENT ĐẶT LỊCH / CHỌN TỈNH / BỆNH VIỆN =================
     all_provinces = list(TinhThanh.objects.all())
+
+    # 1.0 Kiểm tra ngữ cảnh tin nhắn trước đó (Session history)
+    prev_specialty = None
+    last_stage = None
+    if session:
+        last_ai_msg = session.messages.filter(sender='ai').order_by('-created_at').first()
+        if last_ai_msg and last_ai_msg.data_json:
+            prev_specialty = last_ai_msg.data_json.get('suggested_specialty')
+            last_stage = last_ai_msg.data_json.get('stage')
+
+    # A. Nếu người dùng xác nhận ĐỒNG Ý / MUỐN ĐẶT LỊCH
+    booking_affirmative_exact = ['có', 'co', 'ok', 'yes', 'được', 'duoc', 'đặt', 'dat', 'đặt lịch', 'dat lich', 'đặt khám', 'dat kham', 'đồng ý', 'dong y', 'muốn', 'muon']
+    booking_affirmative_phrases = [
+        'muốn đặt lịch', 'muon dat lich', 'có đặt lịch', 'co dat lich',
+        'có, tôi muốn đặt lịch khám', 'tôi muốn đặt lịch', 'muốn khám', 'muon kham',
+        'hỗ trợ đặt lịch', 'xem bác sĩ', 'xem bac si', 'chọn bác sĩ', 'chon bac si',
+        'đặt hẹn', 'dat hen', 'khám bệnh', 'kham benh'
+    ]
+    is_affirming_booking = (
+        msg_clean in booking_affirmative_exact or
+        any(phrase in msg_clean for phrase in booking_affirmative_phrases) or
+        (last_stage == 'ask_booking_confirmation' and ('có' in msg_clean or 'đặt' in msg_clean or 'muốn' in msg_clean))
+    )
+
+    # B. Nếu người dùng TỪ CHỐI / CHƯA MUỐN ĐẶT LỊCH
+    booking_declining_exact = ['chưa', 'chua', 'không', 'khong', 'thôi', 'thoi', 'no']
+    booking_declining_phrases = [
+        'chưa cần', 'chua can', 'chưa muốn', 'chua muon', 'không cần', 'khong can',
+        'chưa, tôi muốn hỏi thêm', 'tôi muốn hỏi thêm', 'chưa muốn đặt', 'để sau', 'de sau'
+    ]
+    is_declining_booking = (
+        msg_clean in booking_declining_exact or
+        any(phrase in msg_clean for phrase in booking_declining_phrases)
+    )
+
+    if is_declining_booking and last_stage == 'ask_booking_confirmation':
+        response_data['stage'] = 'general'
+        response_data['reply'] = (
+            "Dạ vâng, hoàn toàn không sao bạn nhé! Bạn hãy dành thời gian nghỉ ngơi, theo dõi thêm các phản ứng của cơ thể và chú ý các hướng dẫn chăm sóc ban đầu.\n\n"
+            "Nếu bạn có bất kỳ câu hỏi nào về chế độ ăn uống, thói quen sinh hoạt hay cần tư vấn thêm triệu chứng gì, bạn cứ nhắn cho tôi bất kỳ lúc nào nhé! Chúc bạn mau khỏe! 🌸"
+        )
+        response_data['quick_replies'] = [
+            'Ăn gì tốt cho sức khỏe?',
+            'Cách chăm sóc tại nhà',
+            'Khi nào cần đi khám bác sĩ?'
+        ]
+        return response_data
+
+    if is_affirming_booking and (prev_specialty or last_stage == 'ask_booking_confirmation' or 'đặt lịch' in msg_clean or 'khám' in msg_clean):
+        target_specialty = prev_specialty or 'Nội tổng quát'
+        specialty_doctors = BacSi.objects.filter(
+            chuyen_khoa__ten_chuyen_khoa=target_specialty,
+            trang_thai=True
+        ).select_related('benh_vien', 'chuyen_khoa', 'user')[:4]
+
+        doc_list = []
+        for d in specialty_doctors:
+            slots_list = get_doctor_active_slots(d, max_slots=8)
+            gender_label = 'Bác sĩ Nam' if getattr(d.user, 'gender', 'nam') == 'nam' else 'Bác sĩ Nữ'
+            doc_list.append({
+                'id': d.id,
+                'ho_ten': d.ho_ten,
+                'chuc_danh': d.chuc_danh,
+                'gender': gender_label,
+                'chuyen_khoa_id': d.chuyen_khoa.id,
+                'chuyen_khoa': d.chuyen_khoa.ten_chuyen_khoa,
+                'gia_kham': float(d.gia_kham),
+                'anh': d.anh_dai_dien,
+                'benh_vien_id': d.benh_vien.id,
+                'benh_vien': d.benh_vien.ten_benh_vien,
+                'slots': slots_list
+            })
+
+        response_data['stage'] = 'booking_confirmed'
+        response_data['suggested_specialty'] = target_specialty
+        response_data['suggested_doctors'] = doc_list
+        response_data['suggested_provinces'] = [p.ten_tinh for p in all_provinces]
+        response_data['quick_replies'] = [p.ten_tinh for p in all_provinces]
+        response_data['reply'] = (
+            f"Dạ vâng! Tôi rất sẵn lòng hỗ trợ bạn kết nối và đặt lịch khám với Bác sĩ chuyên khoa **{target_specialty}**. 🩺\n\n"
+            f"👉 Bạn có thể bấm chọn **Tỉnh/Thành phố** bên dưới để tìm bệnh viện gần bạn nhất, "
+            f"hoặc bấm **'Chọn bác sĩ này'** ở danh sách bên dưới để xem khung giờ trống và đặt lịch trực tiếp:"
+        )
+        return response_data
     
     # 1.1 Người dùng chủ động chọn Tỉnh/Thành phố
     matched_province = None
@@ -424,7 +508,6 @@ def process_medical_chat(user_message, session=None):
         return response_data
 
     # ================= 2. KIỂM TRA HỎI ĐÁP DINH DƯỠNG, ĂN UỐNG & SỨC KHỎE ĐỜI SỐNG =================
-    # Kiểm tra xem có khớp các chủ đề dinh dưỡng / ăn uống / lối sống / sơ cứu không
     matched_health_topics = []
     for topic in HEALTH_KNOWLEDGE_BASE:
         for kw in topic['keywords']:
@@ -433,10 +516,8 @@ def process_medical_chat(user_message, session=None):
                 break
 
     if matched_health_topics:
-        # Người dùng đang hỏi về Dinh dưỡng, Chế độ ăn hoặc Sức khỏe lối sống!
         primary_topic = matched_health_topics[0]
         
-        # Thử gọi OpenAI nếu có cấu hình để trả lời phong phú hơn
         openai_reply = call_openai_medical_chat(user_message)
         if openai_reply:
             response_data['reply'] = openai_reply + f"\n\n{DISCLAIMER_TEXT}"
@@ -472,51 +553,74 @@ def process_medical_chat(user_message, session=None):
                 break
 
     if detected_specialties:
-        # Tìm thấy chuyên khoa phù hợp với triệu chứng bệnh nhân!
         primary_specialty = detected_specialties[0]
-        response_data['stage'] = 'symptom_matched'
-        response_data['suggested_specialty'] = primary_specialty
-        response_data['suggested_provinces'] = [p.ten_tinh for p in all_provinces]
-        response_data['quick_replies'] = [p.ten_tinh for p in all_provinces]
-
-        # Lấy 4 bác sĩ (cả nam lẫn nữ) của chuyên khoa này
-        specialty_doctors = BacSi.objects.filter(
-            chuyen_khoa__ten_chuyen_khoa=primary_specialty,
-            trang_thai=True
-        ).select_related('benh_vien', 'chuyen_khoa', 'user')[:4]
-
-        doc_list = []
-        for d in specialty_doctors:
-            slots_list = get_doctor_active_slots(d, max_slots=8)
-            gender_label = 'Bác sĩ Nam' if getattr(d.user, 'gender', 'nam') == 'nam' else 'Bác sĩ Nữ'
-            doc_list.append({
-                'id': d.id,
-                'ho_ten': d.ho_ten,
-                'chuc_danh': d.chuc_danh,
-                'gender': gender_label,
-                'chuyen_khoa_id': d.chuyen_khoa.id,
-                'chuyen_khoa': d.chuyen_khoa.ten_chuyen_khoa,
-                'gia_kham': float(d.gia_kham),
-                'anh': d.anh_dai_dien,
-                'benh_vien_id': d.benh_vien.id,
-                'benh_vien': d.benh_vien.ten_benh_vien,
-                'slots': slots_list
-            })
-        response_data['suggested_doctors'] = doc_list
-
         specialty_text = " hoặc ".join([f"**{s}**" for s in detected_specialties[:2]])
         advice_text = " ".join(matched_advice[:1])
         urgent_text = f"\n\n⚠️ **Lưu ý khẩn:** {matched_urgent[0]}" if matched_urgent else ""
 
-        response_data['reply'] = (
-            f"🤖 **Phân tích của Bác sĩ AI:**\n"
-            f"Dựa trên các triệu chứng bạn vừa chia sẻ, hệ thống đề xuất bạn nên khám chuyên khoa {specialty_text}.\n\n"
-            f"🩺 **Tư vấn y khoa tham khảo:**\n{advice_text}{urgent_text}\n\n"
-            f"{DISCLAIMER_TEXT}\n\n"
-            f"👨‍⚕️ **Đội ngũ bác sĩ chuyên khoa {primary_specialty} sẵn sàng nhận lịch (cả bác sĩ nam & nữ):**\n"
-            f"Bạn có thể chọn trực tiếp bác sĩ bên dưới để đặt lịch khám, hoặc chọn **Tỉnh/Thành phố** để xem bệnh viện gần bạn nhất:"
-        )
-        return response_data
+        # Kiểm tra xem người dùng có nói rõ ngay từ đầu là muốn đặt lịch không
+        explicitly_booking = any(w in msg_clean for w in ['đặt lịch', 'muốn khám', 'đặt khám', 'hẹn khám', 'tìm bác sĩ', 'xem bác sĩ'])
+
+        if explicitly_booking:
+            # Người dùng đã yêu cầu đặt lịch rõ ràng ngay từ đầu
+            specialty_doctors = BacSi.objects.filter(
+                chuyen_khoa__ten_chuyen_khoa=primary_specialty,
+                trang_thai=True
+            ).select_related('benh_vien', 'chuyen_khoa', 'user')[:4]
+
+            doc_list = []
+            for d in specialty_doctors:
+                slots_list = get_doctor_active_slots(d, max_slots=8)
+                gender_label = 'Bác sĩ Nam' if getattr(d.user, 'gender', 'nam') == 'nam' else 'Bác sĩ Nữ'
+                doc_list.append({
+                    'id': d.id,
+                    'ho_ten': d.ho_ten,
+                    'chuc_danh': d.chuc_danh,
+                    'gender': gender_label,
+                    'chuyen_khoa_id': d.chuyen_khoa.id,
+                    'chuyen_khoa': d.chuyen_khoa.ten_chuyen_khoa,
+                    'gia_kham': float(d.gia_kham),
+                    'anh': d.anh_dai_dien,
+                    'benh_vien_id': d.benh_vien.id,
+                    'benh_vien': d.benh_vien.ten_benh_vien,
+                    'slots': slots_list
+                })
+
+            response_data['stage'] = 'booking_confirmed'
+            response_data['suggested_specialty'] = primary_specialty
+            response_data['suggested_doctors'] = doc_list
+            response_data['suggested_provinces'] = [p.ten_tinh for p in all_provinces]
+            response_data['quick_replies'] = [p.ten_tinh for p in all_provinces]
+            response_data['reply'] = (
+                f"🤖 **Bác sĩ AI xin tư vấn:**\n"
+                f"Với triệu chứng bạn vừa chia sẻ, chuyên khoa phù hợp là {specialty_text}.\n\n"
+                f"🩺 **Lời khuyên y khoa:**\n{advice_text}{urgent_text}\n\n"
+                f"{DISCLAIMER_TEXT}\n\n"
+                f"👨‍⚕️ **Đội ngũ bác sĩ chuyên khoa {primary_specialty} sẵn sàng nhận lịch (cả bác sĩ nam & nữ):**\n"
+                f"Bạn có thể chọn trực tiếp bác sĩ bên dưới hoặc chọn **Tỉnh/Thành phố** để xem bệnh viện tiếp nhận:"
+            )
+            return response_data
+        else:
+            # Trò chuyện tự nhiên: Tư vấn ân cần, sau đó hỏi người dùng có muốn đặt lịch không!
+            response_data['stage'] = 'ask_booking_confirmation'
+            response_data['suggested_specialty'] = primary_specialty
+            response_data['suggested_doctors'] = []
+            response_data['suggested_provinces'] = []
+            response_data['quick_replies'] = [
+                'Có, tôi muốn đặt lịch khám',
+                'Chưa, tôi muốn hỏi thêm'
+            ]
+            response_data['reply'] = (
+                f"Chào bạn, tôi rất chia sẻ với tình trạng khó chịu mà bạn đang gặp phải.\n\n"
+                f"🩺 **Về triệu chứng của bạn:**\n"
+                f"{advice_text}{urgent_text}\n\n"
+                f"💡 **Định hướng chuyên khoa:**\n"
+                f"Với những biểu hiện này, nếu triệu chứng kéo dài hoặc không thuyên giảm, bạn nên thăm khám tại chuyên khoa {specialty_text} để được bác sĩ kiểm tra và chẩn đoán chính xác nhất.\n\n"
+                f"{DISCLAIMER_TEXT}\n\n"
+                f"---\n"
+                f"💬 **Tình trạng này bạn bị bao lâu rồi? Bạn có muốn tôi hỗ trợ đặt lịch khám với Bác sĩ chuyên khoa {primary_specialty} không?**"
+            )
+            return response_data
 
     # ================= 4. THỬ GỌI OPENAI CHO CÂU HỎI MỞ BẤT KỲ =================
     openai_reply = call_openai_medical_chat(user_message)
