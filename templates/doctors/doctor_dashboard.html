@@ -1,176 +1,891 @@
-{% extends 'base.html' %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cổng Bác Sĩ & Quản Lý Lịch Khám | MedicalAI Clinic Portal</title>
 
-{% block title %}Bảng Điều Khiển Bác Sĩ - Medical AI{% endblock %}
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-{% block content %}
-<div class="container py-4">
-  <!-- Header -->
-  <div class="d-flex flex-wrap justify-content-between align-items-center mb-4">
-    <div>
-      <h2 class="fw-bold mb-1"><i class="bi bi-speedometer2 text-primary me-2"></i>Bảng Điều Khiển Bác Sĩ</h2>
-      <p class="text-muted mb-0">
-        Xin chào <strong>{{ doctor.chuc_danh }} {{ doctor.ho_ten }}</strong> • Bệnh viện: {{ doctor.benh_vien.ten_benh_vien }}
-      </p>
-    </div>
-    <span class="badge bg-success-subtle text-success p-2 fs-6">
-      <i class="bi bi-shield-check"></i> Quyền Bác sĩ chuyên khoa
-    </span>
-  </div>
+  <!-- Bootstrap 5 & Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
-  <!-- Thống kê nhanh -->
-  <div class="row g-3 mb-4">
-    <div class="col-md col-6">
-      <a href="?status=all" class="text-decoration-none">
-        <div class="card card-custom p-3 border text-center {% if status_filter == 'all' %}border-primary bg-primary-subtle{% endif %}">
-          <div class="h3 fw-bold text-primary mb-0">{{ stats.total }}</div>
-          <small class="text-muted fw-semibold">Tổng số lịch</small>
-        </div>
-      </a>
-    </div>
-    <div class="col-md col-6">
-      <a href="?status=Cho_xac_nhan" class="text-decoration-none">
-        <div class="card card-custom p-3 border text-center {% if status_filter == 'Cho_xac_nhan' %}border-warning bg-warning-subtle{% endif %}">
-          <div class="h3 fw-bold text-warning mb-0">{{ stats.cho_xac_nhan }}</div>
-          <small class="text-muted fw-semibold">Chờ xác nhận</small>
-        </div>
-      </a>
-    </div>
-    <div class="col-md col-6">
-      <a href="?status=Da_xac_nhan" class="text-decoration-none">
-        <div class="card card-custom p-3 border text-center {% if status_filter == 'Da_xac_nhan' %}border-success bg-success-subtle{% endif %}">
-          <div class="h3 fw-bold text-success mb-0">{{ stats.da_xac_nhan }}</div>
-          <small class="text-muted fw-semibold">Đã xác nhận</small>
-        </div>
-      </a>
-    </div>
-    <div class="col-md col-6">
-      <a href="?status=Da_kham" class="text-decoration-none">
-        <div class="card card-custom p-3 border text-center {% if status_filter == 'Da_kham' %}border-info bg-info-subtle{% endif %}">
-          <div class="h3 fw-bold text-info mb-0">{{ stats.da_kham }}</div>
-          <small class="text-muted fw-semibold">Đã khám xong</small>
-        </div>
-      </a>
-    </div>
-    <div class="col-md col-6">
-      <a href="?status=Da_huy" class="text-decoration-none">
-        <div class="card card-custom p-3 border text-center {% if status_filter == 'Da_huy' %}border-danger bg-danger-subtle{% endif %}">
-          <div class="h3 fw-bold text-danger mb-0">{{ stats.da_huy }}</div>
-          <small class="text-muted fw-semibold">Đã hủy</small>
-        </div>
-      </a>
-    </div>
-  </div>
+  <style>
+    :root {
+      --primary: #0284c7;
+      --primary-dark: #0369a1;
+      --sidebar-bg: #0f172a;
+      --sidebar-hover: #1e293b;
+      --sidebar-active: #0284c7;
+      --content-bg: #f8fafc;
+      --card-border: #e2e8f0;
+      --text-dark: #1e293b;
+      --text-muted: #64748b;
+    }
 
-  <!-- Danh sách lịch khám -->
-  <div class="card card-custom border overflow-hidden">
-    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
-      <h5 class="fw-bold mb-0">Danh Sách Lịch Khám Cần Xử Lý</h5>
-      <span class="text-muted small">Cập nhật thời gian thực</span>
-    </div>
+    body {
+      font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+      background-color: var(--content-bg);
+      color: var(--text-dark);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
 
-    <div class="table-responsive">
-      <table class="table table-hover align-middle mb-0">
-        <thead class="table-light">
-          <tr>
-            <th>Mã Đặt Lịch</th>
-            <th>Bệnh Nhân</th>
-            <th>Số Điện Thoại</th>
-            <th>Thời Gian Khám</th>
-            <th>Triệu Chứng / Lý Do</th>
-            <th>Trạng Thái</th>
-            <th class="text-end">Hành Động</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for app in appointments %}
-            <tr>
-              <td>
-                <span class="fw-bold text-primary font-monospace">{{ app.ma_lich_kham }}</span>
-              </td>
-              <td>
-                <strong>{{ app.ten_benh_nhan|default:app.benh_nhan.username }}</strong>
-              </td>
-              <td>{{ app.so_dien_thoai|default:"Chưa cung cấp" }}</td>
-              <td>
-                <div class="fw-semibold">{{ app.ngay_kham|date:"d/m/Y" }}</div>
-                <small class="text-muted">{{ app.gio_kham|time:"H:i" }}</small>
-              </td>
-              <td>
-                <div class="small text-dark" style="max-width: 250px;">{{ app.trieu_chung|default:app.ly_do_kham }}</div>
-                {% if app.ghi_chu_bac_si %}
-                  <div class="small text-muted fst-italic">BS ghi: {{ app.ghi_chu_bac_si }}</div>
-                {% endif %}
-              </td>
-              <td>
-                <span class="badge badge-status-{{ app.trang_thai }} px-3 py-2 rounded-pill">
-                  {{ app.get_trang_thai_display }}
-                </span>
-              </td>
-              <td class="text-end">
-                <div class="d-inline-flex gap-1">
-                  {% if app.trang_thai == 'Cho_xac_nhan' %}
-                    <form method="POST" action="{% url 'update_appointment_status' app.id %}">
-                      {% csrf_token %}
-                      <input type="hidden" name="action" value="confirm">
-                      <button type="submit" class="btn btn-sm btn-success" title="Xác nhận lịch khám">
-                        <i class="bi bi-check-lg"></i> Duyệt
-                      </button>
-                    </form>
-                    <form method="POST" action="{% url 'update_appointment_status' app.id %}" onsubmit="return confirm('Bạn chắc chắn muốn hủy lịch này?')">
-                      {% csrf_token %}
-                      <input type="hidden" name="action" value="cancel">
-                      <button type="submit" class="btn btn-sm btn-outline-danger" title="Hủy lịch">
-                        <i class="bi bi-x-lg"></i>
-                      </button>
-                    </form>
-                  {% elif app.trang_thai == 'Da_xac_nhan' %}
-                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#completeModal{{ app.id }}">
-                      <i class="bi bi-clipboard2-check"></i> Hoàn thành khám
-                    </button>
-                  {% else %}
-                    <span class="text-muted small">Đã đóng</span>
-                  {% endif %}
+    /* Top Clinical Navbar */
+    .clinical-header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--card-border);
+      padding: 0.75rem 1.5rem;
+      position: sticky;
+      top: 0;
+      z-index: 1020;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    }
+
+    .brand-logo {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: #0f172a;
+      text-decoration: none;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .brand-logo span.badge-portal {
+      font-size: 0.65rem;
+      letter-spacing: 0.5px;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+      background: #e0f2fe;
+      color: #0284c7;
+      font-weight: 700;
+    }
+
+    /* Layout Wrapper */
+    .dashboard-wrapper {
+      display: flex;
+      flex: 1;
+    }
+
+    /* Sidebar Navigation */
+    .dashboard-sidebar {
+      width: 270px;
+      background: var(--sidebar-bg);
+      color: #94a3b8;
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      min-height: calc(100vh - 61px);
+    }
+
+    .sidebar-doctor-profile {
+      padding: 1.25rem;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      background: rgba(255, 255, 255, 0.03);
+    }
+
+    .sidebar-nav {
+      padding: 1rem 0.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+      flex: 1;
+    }
+
+    .sidebar-link {
+      color: #cbd5e1;
+      text-decoration: none;
+      padding: 0.7rem 0.9rem;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.88rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+    }
+
+    .sidebar-link:hover {
+      background: var(--sidebar-hover);
+      color: #ffffff;
+    }
+
+    .sidebar-link.active {
+      background: var(--sidebar-active);
+      color: #ffffff;
+      font-weight: 600;
+      box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+    }
+
+    .sidebar-section-title {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #64748b;
+      font-weight: 700;
+      padding: 0.75rem 0.9rem 0.25rem;
+    }
+
+    /* Main Content Area */
+    .dashboard-main {
+      flex: 1;
+      padding: 1.75rem;
+      overflow-x: hidden;
+    }
+
+    /* KPI Cards */
+    .kpi-card {
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      background: #ffffff;
+      padding: 1.25rem;
+      transition: all 0.2s ease;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+    }
+
+    .kpi-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.4rem;
+    }
+
+    /* Status Badges */
+    .badge-status-Cho_xac_nhan {
+      background-color: #fef3c7;
+      color: #b45309;
+      border: 1px solid #fde68a;
+    }
+
+    .badge-status-Da_xac_nhan {
+      background-color: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+    }
+
+    .badge-status-Da_kham {
+      background-color: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+
+    .badge-status-Da_huy {
+      background-color: #fee2e2;
+      color: #b91c1c;
+      border: 1px solid #fecaca;
+    }
+
+    /* Table Custom */
+    .clinical-table thead th {
+      background-color: #f8fafc;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #475569;
+      font-weight: 700;
+      padding: 0.85rem 1rem;
+      border-bottom: 2px solid var(--card-border);
+    }
+
+    .clinical-table tbody td {
+      padding: 1rem;
+      vertical-align: middle;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 0.88rem;
+    }
+
+    .clinical-table tbody tr:hover {
+      background-color: #f8fafc;
+    }
+
+    .portal-footer {
+      background: #ffffff;
+      border-top: 1px solid var(--card-border);
+      padding: 1rem 1.5rem;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    @media (max-width: 991.98px) {
+      .dashboard-wrapper {
+        flex-direction: column;
+      }
+      .dashboard-sidebar {
+        width: 100%;
+        min-height: auto;
+      }
+      .dashboard-main {
+        padding: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Clinical Topbar -->
+  <header class="clinical-header">
+    <div class="d-flex align-items-center justify-content-between flex-wrap gap-3">
+      <!-- Logo & Portal Identifier -->
+      <div class="d-flex align-items-center gap-3">
+        <a href="{% url 'doctor_dashboard' %}" class="brand-logo">
+          <i class="bi bi-heart-pulse-fill text-danger fs-4"></i>
+          <span>Medical<span class="text-primary">AI</span></span>
+          <span class="badge-portal"><i class="bi bi-shield-shaded me-1"></i>CỔNG QUẢN LÝ BÁC SĨ</span>
+        </a>
+      </div>
+
+      <!-- Hospital & Department Information -->
+      <div class="d-none d-md-flex align-items-center gap-3 text-muted small">
+        <div class="d-flex align-items-center gap-2 bg-light px-3 py-1 rounded-pill border">
+          <i class="bi bi-hospital text-primary"></i>
+          <span>{{ doctor.benh_vien.ten_benh_vien|default:"Trung Tâm Y Tế Đa Khoa MedicalAI" }}</span>
+          <span class="text-muted">•</span>
+          <span class="fw-semibold text-dark">Khoa: {{ doctor.chuyen_khoa.ten_chuyen_khoa|default:"Đa khoa" }}</span>
+        </div>
+      </div>
+
+      <!-- Doctor Action & User Controls -->
+      <div class="d-flex align-items-center gap-2">
+        <!-- Online Status Indicator -->
+        <span class="badge bg-success-subtle text-success border border-success-subtle px-2 py-1 small d-none d-sm-inline-flex align-items-center gap-1">
+          <i class="bi bi-circle-fill text-success" style="font-size: 0.45rem;"></i> Ca trực hoạt động
+        </span>
+
+        <!-- View Public Patient Portal -->
+        <a href="{% url 'home' %}" target="_blank" class="btn btn-sm btn-outline-secondary" title="Mở trang chủ người dùng trong tab mới">
+          <i class="bi bi-box-arrow-up-right me-1"></i> <span class="d-none d-sm-inline">Xem trang bệnh nhân</span>
+        </a>
+
+        <!-- Doctor Account Dropdown -->
+        <div class="dropdown">
+          <button class="btn btn-sm btn-light border dropdown-toggle d-flex align-items-center gap-2" type="button" data-bs-toggle="dropdown">
+            <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 28px; height: 28px; font-size: 0.75rem; font-weight: 700;">
+              BS
+            </div>
+            <div class="text-start d-none d-sm-block">
+              <div class="fw-bold lh-1" style="font-size: 0.82rem;">{{ doctor.chuc_danh }} {{ doctor.ho_ten|default:user.full_name|default:user.username }}</div>
+              <small class="text-muted" style="font-size: 0.7rem;">Bác sĩ chuyên khoa</small>
+            </div>
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end shadow-sm border mt-1">
+            <li><h6 class="dropdown-header">Tài khoản: {{ user.username }}</h6></li>
+            <li><a class="dropdown-item" href="{% url 'profile' %}"><i class="bi bi-person me-2"></i> Hồ sơ của tôi</a></li>
+            {% if user.is_staff or user.is_superuser %}
+              <li><a class="dropdown-item text-danger" href="/admin/" target="_blank"><i class="bi bi-shield-lock me-2"></i> Quản trị Django Admin</a></li>
+            {% endif %}
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item text-danger" href="{% url 'logout' %}"><i class="bi bi-box-arrow-right me-2"></i> Đăng xuất an toàn</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Dashboard Body Wrapper -->
+  <div class="dashboard-wrapper">
+    <!-- Left Management Sidebar -->
+    <aside class="dashboard-sidebar">
+      <!-- Doctor Mini Profile -->
+      <div class="sidebar-doctor-profile">
+        <div class="d-flex align-items-center gap-3">
+          {% if doctor.anh_dai_dien %}
+            <img src="{{ doctor.anh_dai_dien }}" alt="Avatar" class="rounded-circle border border-2 border-primary object-fit-cover" style="width: 48px; height: 48px;">
+          {% else %}
+            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold fs-5" style="width: 48px; height: 48px;">
+              <i class="bi bi-person-fill"></i>
+            </div>
+          {% endif %}
+          <div class="overflow-hidden">
+            <h6 class="text-white mb-0 text-truncate fw-bold">{{ doctor.chuc_danh }} {{ doctor.ho_ten|default:user.full_name|default:user.username }}</h6>
+            <small class="text-info d-block text-truncate">{{ doctor.chuyen_khoa.ten_chuyen_khoa|default:"Bác sĩ phụ trách" }}</small>
+            <small class="text-muted d-block text-truncate" style="font-size: 0.72rem;">{{ doctor.benh_vien.ten_benh_vien|default:"Cơ sở khám bệnh" }}</small>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sidebar Navigation Menu -->
+      <nav class="sidebar-nav">
+        <div class="sidebar-section-title">QUẢN LÝ TIẾP NHẬN & KHÁM BỆNH</div>
+
+        <a href="{% url 'doctor_dashboard' %}?status=all" class="sidebar-link {% if status_filter == 'all' or not status_filter %}active{% endif %}">
+          <span><i class="bi bi-grid-1x2-fill me-2"></i> Tất cả lịch tiếp nhận</span>
+          <span class="badge bg-secondary-subtle text-white px-2">{{ stats.total }}</span>
+        </a>
+
+        <a href="{% url 'doctor_dashboard' %}?status=Cho_xac_nhan" class="sidebar-link {% if status_filter == 'Cho_xac_nhan' %}active{% endif %}">
+          <span><i class="bi bi-clock-history me-2 text-warning"></i> Chờ bác sĩ duyệt</span>
+          <span class="badge bg-warning text-dark px-2 fw-bold">{{ stats.cho_xac_nhan }}</span>
+        </a>
+
+        <a href="{% url 'doctor_dashboard' %}?status=Da_xac_nhan" class="sidebar-link {% if status_filter == 'Da_xac_nhan' %}active{% endif %}">
+          <span><i class="bi bi-calendar-check me-2 text-info"></i> Lịch đã xác nhận</span>
+          <span class="badge bg-info text-white px-2">{{ stats.da_xac_nhan }}</span>
+        </a>
+
+        <a href="{% url 'doctor_dashboard' %}?status=Da_kham" class="sidebar-link {% if status_filter == 'Da_kham' %}active{% endif %}">
+          <span><i class="bi bi-check-circle-fill me-2 text-success"></i> Đã khám xong</span>
+          <span class="badge bg-success text-white px-2">{{ stats.da_kham }}</span>
+        </a>
+
+        <a href="{% url 'doctor_dashboard' %}?status=Da_huy" class="sidebar-link {% if status_filter == 'Da_huy' %}active{% endif %}">
+          <span><i class="bi bi-x-circle-fill me-2 text-danger"></i> Lịch đã hủy</span>
+          <span class="badge bg-danger text-white px-2">{{ stats.da_huy }}</span>
+        </a>
+
+        <div class="sidebar-section-title mt-3">HỆ THỐNG</div>
+
+        <a href="{% url 'home' %}" target="_blank" class="sidebar-link">
+          <span><i class="bi bi-globe me-2 text-primary"></i> Trang giao diện người dùng</span>
+          <i class="bi bi-arrow-up-right small"></i>
+        </a>
+
+        <a href="{% url 'logout' %}" class="sidebar-link text-danger mt-auto">
+          <span><i class="bi bi-box-arrow-left me-2"></i> Đăng xuất bác sĩ</span>
+        </a>
+      </nav>
+
+      <!-- Sidebar Footer Info -->
+      <div class="p-3 border-top border-secondary border-opacity-25 small text-muted text-center" style="font-size: 0.72rem;">
+        MedicalAI Clinical System v2.5<br>Bảo mật dữ liệu Y tế chuẩn Bộ Y tế
+      </div>
+    </aside>
+
+    <!-- Main Workspace Area -->
+    <main class="dashboard-main">
+
+      <!-- Django Messages Notification -->
+      {% if messages %}
+        <div class="mb-4">
+          {% for message in messages %}
+            <div class="alert alert-{{ message.tags|default:'info' }} alert-dismissible fade show shadow-sm border-0 d-flex align-items-center gap-2" role="alert">
+              <i class="bi {% if message.tags == 'success' %}bi-check-circle-fill text-success fs-5{% elif message.tags == 'error' %}bi-exclamation-triangle-fill text-danger fs-5{% else %}bi-info-circle-fill text-primary fs-5{% endif %}"></i>
+              <div class="flex-grow-1">{{ message }}</div>
+              <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <!-- Top Greeting & Action Header -->
+      <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
+        <div>
+          <h3 class="fw-bold mb-1 text-dark">
+            <i class="bi bi-clipboard2-pulse text-primary me-2"></i>Bảng Quản Lý Tiếp Nhận & Khám Bệnh
+          </h3>
+          <p class="text-muted mb-0">
+            Xin chào <strong>{{ doctor.chuc_danh }} {{ doctor.ho_ten|default:user.full_name|default:user.username }}</strong> &bull; Quản lý hồ sơ bệnh nhân và xử lý lịch hẹn theo thời gian thực.
+          </p>
+        </div>
+
+        <div class="d-flex align-items-center gap-2">
+          <a href="{% url 'doctor_dashboard' %}" class="btn btn-sm btn-white border bg-white shadow-sm" title="Làm mới dữ liệu">
+            <i class="bi bi-arrow-clockwise me-1 text-primary"></i> Làm mới
+          </a>
+        </div>
+      </div>
+
+      <!-- KPI Statistics Cards -->
+      <div class="row g-3 mb-4">
+        <!-- Total -->
+        <div class="col-xl col-md-4 col-sm-6">
+          <a href="{% url 'doctor_dashboard' %}?status=all" class="text-decoration-none">
+            <div class="kpi-card {% if status_filter == 'all' or not status_filter %}border-primary border-2{% endif %}">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <small class="text-muted fw-semibold d-block">Tổng Lịch Tiếp Nhận</small>
+                  <div class="h3 fw-bold text-dark mb-0 mt-1">{{ stats.total }}</div>
                 </div>
+                <div class="kpi-icon bg-primary-subtle text-primary">
+                  <i class="bi bi-calendar4-week"></i>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
 
-                <!-- Modal Ghi chú & Hoàn tất khám -->
-                <div class="modal fade text-start" id="completeModal{{ app.id }}" tabindex="-1">
-                  <div class="modal-dialog">
-                    <div class="modal-content">
-                      <form method="POST" action="{% url 'update_appointment_status' app.id %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="action" value="complete">
-                        <div class="modal-header">
-                          <h5 class="modal-title fw-bold">Hoàn Thành Khám Bệnh [{{ app.ma_lich_kham }}]</h5>
-                          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <!-- Pending (Cho_xac_nhan) -->
+        <div class="col-xl col-md-4 col-sm-6">
+          <a href="{% url 'doctor_dashboard' %}?status=Cho_xac_nhan" class="text-decoration-none">
+            <div class="kpi-card {% if status_filter == 'Cho_xac_nhan' %}border-warning border-2 bg-warning-subtle bg-opacity-25{% endif %}">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <small class="text-muted fw-semibold d-block">Chờ Bác Sĩ Duyệt</small>
+                  <div class="h3 fw-bold text-warning mb-0 mt-1">{{ stats.cho_xac_nhan }}</div>
+                </div>
+                <div class="kpi-icon bg-warning-subtle text-warning">
+                  <i class="bi bi-hourglass-split"></i>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+
+        <!-- Confirmed (Da_xac_nhan) -->
+        <div class="col-xl col-md-4 col-sm-6">
+          <a href="{% url 'doctor_dashboard' %}?status=Da_xac_nhan" class="text-decoration-none">
+            <div class="kpi-card {% if status_filter == 'Da_xac_nhan' %}border-info border-2{% endif %}">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <small class="text-muted fw-semibold d-block">Đã Xác Nhận</small>
+                  <div class="h3 fw-bold text-primary mb-0 mt-1">{{ stats.da_xac_nhan }}</div>
+                </div>
+                <div class="kpi-icon bg-info-subtle text-info">
+                  <i class="bi bi-calendar-check"></i>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+
+        <!-- Completed (Da_kham) -->
+        <div class="col-xl col-md-6 col-sm-6">
+          <a href="{% url 'doctor_dashboard' %}?status=Da_kham" class="text-decoration-none">
+            <div class="kpi-card {% if status_filter == 'Da_kham' %}border-success border-2{% endif %}">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <small class="text-muted fw-semibold d-block">Đã Khám Xong</small>
+                  <div class="h3 fw-bold text-success mb-0 mt-1">{{ stats.da_kham }}</div>
+                </div>
+                <div class="kpi-icon bg-success-subtle text-success">
+                  <i class="bi bi-clipboard2-check"></i>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+
+        <!-- Cancelled (Da_huy) -->
+        <div class="col-xl col-md-6 col-sm-6">
+          <a href="{% url 'doctor_dashboard' %}?status=Da_huy" class="text-decoration-none">
+            <div class="kpi-card {% if status_filter == 'Da_huy' %}border-danger border-2{% endif %}">
+              <div class="d-flex align-items-center justify-content-between">
+                <div>
+                  <small class="text-muted fw-semibold d-block">Đã Hủy Hẹn</small>
+                  <div class="h3 fw-bold text-danger mb-0 mt-1">{{ stats.da_huy }}</div>
+                </div>
+                <div class="kpi-icon bg-danger-subtle text-danger">
+                  <i class="bi bi-x-octagon"></i>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+      </div>
+
+      <!-- Appointments Management Card -->
+      <div class="card border rounded-3 shadow-sm bg-white overflow-hidden">
+        
+        <!-- Header with Filter Tabs and Search Box -->
+        <div class="card-header bg-white py-3 border-bottom">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-3">
+            
+            <!-- Quick Status Filter Pills -->
+            <div class="d-flex flex-wrap align-items-center gap-1">
+              <a href="{% url 'doctor_dashboard' %}?status=all{% if search_query %}&q={{ search_query }}{% endif %}" 
+                 class="btn btn-sm {% if status_filter == 'all' or not status_filter %}btn-primary{% else %}btn-light border text-secondary{% endif %} rounded-pill px-3">
+                Tất cả ({{ stats.total }})
+              </a>
+              <a href="{% url 'doctor_dashboard' %}?status=Cho_xac_nhan{% if search_query %}&q={{ search_query }}{% endif %}" 
+                 class="btn btn-sm {% if status_filter == 'Cho_xac_nhan' %}btn-warning text-dark fw-bold{% else %}btn-light border text-secondary{% endif %} rounded-pill px-3">
+                Chờ duyệt ({{ stats.cho_xac_nhan }})
+              </a>
+              <a href="{% url 'doctor_dashboard' %}?status=Da_xac_nhan{% if search_query %}&q={{ search_query }}{% endif %}" 
+                 class="btn btn-sm {% if status_filter == 'Da_xac_nhan' %}btn-info text-white fw-bold{% else %}btn-light border text-secondary{% endif %} rounded-pill px-3">
+                Đã duyệt ({{ stats.da_xac_nhan }})
+              </a>
+              <a href="{% url 'doctor_dashboard' %}?status=Da_kham{% if search_query %}&q={{ search_query }}{% endif %}" 
+                 class="btn btn-sm {% if status_filter == 'Da_kham' %}btn-success text-white fw-bold{% else %}btn-light border text-secondary{% endif %} rounded-pill px-3">
+                Đã khám ({{ stats.da_kham }})
+              </a>
+              <a href="{% url 'doctor_dashboard' %}?status=Da_huy{% if search_query %}&q={{ search_query }}{% endif %}" 
+                 class="btn btn-sm {% if status_filter == 'Da_huy' %}btn-danger text-white fw-bold{% else %}btn-light border text-secondary{% endif %} rounded-pill px-3">
+                Đã hủy ({{ stats.da_huy }})
+              </a>
+            </div>
+
+            <!-- Instant Live Search Bar -->
+            <form method="GET" action="{% url 'doctor_dashboard' %}" class="d-flex align-items-center gap-2" style="max-width: 320px; width: 100%;">
+              {% if status_filter %}
+                <input type="hidden" name="status" value="{{ status_filter }}">
+              {% endif %}
+              <div class="input-group input-group-sm">
+                <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                <input type="text" id="patientSearchInput" name="q" value="{{ search_query|default:'' }}" 
+                       class="form-control border-start-0" 
+                       placeholder="Tìm tên bệnh nhân, SĐT, mã..." 
+                       autocomplete="off">
+                {% if search_query %}
+                  <a href="{% url 'doctor_dashboard' %}?status={{ status_filter }}" class="btn btn-outline-secondary" title="Xóa tìm kiếm">
+                    <i class="bi bi-x"></i>
+                  </a>
+                {% endif %}
+              </div>
+            </form>
+
+          </div>
+        </div>
+
+        <!-- Clinical Appointments Table -->
+        <div class="table-responsive">
+          <table class="table clinical-table align-middle mb-0" id="appointmentsTable">
+            <thead>
+              <tr>
+                <th style="width: 140px;">Mã Lịch Khám</th>
+                <th style="width: 170px;">Thời Gian Khám</th>
+                <th>Thông Tin Bệnh Nhân</th>
+                <th>Triệu Chứng / Lý Do Khám</th>
+                <th>Kết Luận / Ghi Chú</th>
+                <th style="width: 130px;">Trạng Thái</th>
+                <th class="text-end" style="width: 190px;">Thao Tác Xử Lý</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for app in appointments %}
+                <tr class="appointment-row" data-search="{{ app.ma_lich_kham }} {{ app.ten_benh_nhan|default:app.benh_nhan.username }} {{ app.so_dien_thoai|default:'' }} {{ app.trieu_chung|default:'' }}">
+                  <!-- Code -->
+                  <td>
+                    <span class="badge bg-light text-primary border font-monospace px-2 py-1 fs-6">
+                      {{ app.ma_lich_kham }}
+                    </span>
+                  </td>
+
+                  <!-- Date & Time -->
+                  <td>
+                    <div class="fw-bold text-dark d-flex align-items-center gap-1">
+                      <i class="bi bi-calendar3 text-primary"></i> {{ app.ngay_kham|date:"d/m/Y" }}
+                    </div>
+                    <small class="text-muted d-flex align-items-center gap-1">
+                      <i class="bi bi-clock text-secondary"></i> {{ app.gio_kham|time:"H:i" }}
+                    </small>
+                  </td>
+
+                  <!-- Patient Info -->
+                  <td>
+                    <div class="fw-bold text-dark fs-6">{{ app.ten_benh_nhan|default:app.benh_nhan.username }}</div>
+                    {% if app.so_dien_thoai %}
+                      <div class="small text-muted">
+                        <i class="bi bi-telephone text-success me-1"></i>
+                        <a href="tel:{{ app.so_dien_thoai }}" class="text-decoration-none text-muted">{{ app.so_dien_thoai }}</a>
+                      </div>
+                    {% else %}
+                      <small class="text-muted fst-italic">Chưa có SĐT</small>
+                    {% endif %}
+                  </td>
+
+                  <!-- Symptoms / Reason -->
+                  <td>
+                    <div class="text-dark small" style="max-width: 280px; word-break: break-word;">
+                      {{ app.trieu_chung|default:app.ly_do_kham|default:"Khám định kỳ" }}
+                    </div>
+                  </td>
+
+                  <!-- Doctor Notes / Diagnosis -->
+                  <td>
+                    {% if app.ghi_chu_bac_si %}
+                      <div class="small text-success fw-medium" style="max-width: 240px; word-break: break-word;">
+                        <i class="bi bi-journal-check me-1"></i>{{ app.ghi_chu_bac_si|truncatechars:70 }}
+                      </div>
+                    {% else %}
+                      <span class="text-muted small fst-italic">Chưa có kết luận</span>
+                    {% endif %}
+                  </td>
+
+                  <!-- Status -->
+                  <td>
+                    <span class="badge badge-status-{{ app.trang_thai }} px-2 py-1 rounded-pill fw-semibold">
+                      {% if app.trang_thai == 'Cho_xac_nhan' %}
+                        <i class="bi bi-hourglass-split me-1"></i>Chờ duyệt
+                      {% elif app.trang_thai == 'Da_xac_nhan' %}
+                        <i class="bi bi-check2-circle me-1"></i>Đã xác nhận
+                      {% elif app.trang_thai == 'Da_kham' %}
+                        <i class="bi bi-check-all me-1"></i>Đã khám xong
+                      {% elif app.trang_thai == 'Da_huy' %}
+                        <i class="bi bi-x-circle me-1"></i>Đã hủy
+                      {% else %}
+                        {{ app.get_trang_thai_display }}
+                      {% endif %}
+                    </span>
+                  </td>
+
+                  <!-- Actions -->
+                  <td class="text-end">
+                    <div class="d-inline-flex gap-1">
+                      
+                      <!-- When pending approval -->
+                      {% if app.trang_thai == 'Cho_xac_nhan' %}
+                        <form method="POST" action="{% url 'update_appointment_status' app.id %}" class="d-inline">
+                          {% csrf_token %}
+                          <input type="hidden" name="action" value="confirm">
+                          <button type="submit" class="btn btn-sm btn-success px-2 py-1" title="Duyệt tiếp nhận ca khám này">
+                            <i class="bi bi-check-lg me-1"></i> Duyệt
+                          </button>
+                        </form>
+                        <form method="POST" action="{% url 'update_appointment_status' app.id %}" class="d-inline" onsubmit="return confirm('Bạn chắc chắn muốn từ chối/hủy lịch khám [{{ app.ma_lich_kham }}]?')">
+                          {% csrf_token %}
+                          <input type="hidden" name="action" value="cancel">
+                          <button type="submit" class="btn btn-sm btn-outline-danger px-2 py-1" title="Từ chối lịch khám">
+                            <i class="bi bi-x-lg"></i>
+                          </button>
+                        </form>
+                      
+                      <!-- When confirmed, ready to examine -->
+                      {% elif app.trang_thai == 'Da_xac_nhan' %}
+                        <button type="button" class="btn btn-sm btn-primary px-2 py-1" data-bs-toggle="modal" data-bs-target="#completeModal{{ app.id }}">
+                          <i class="bi bi-clipboard2-check me-1"></i> Khám & Kê đơn
+                        </button>
+
+                      <!-- When completed -->
+                      {% elif app.trang_thai == 'Da_kham' %}
+                        <button type="button" class="btn btn-sm btn-outline-success px-2 py-1" data-bs-toggle="modal" data-bs-target="#viewModal{{ app.id }}">
+                          <i class="bi bi-file-earmark-medical me-1"></i> Xem bệnh án
+                        </button>
+                      
+                      <!-- Cancelled -->
+                      {% else %}
+                        <span class="badge bg-light text-muted border px-2 py-1 small">Đã đóng hồ sơ</span>
+                      {% endif %}
+
+                      <!-- Detail info button -->
+                      <button type="button" class="btn btn-sm btn-light border px-2 py-1" data-bs-toggle="modal" data-bs-target="#detailModal{{ app.id }}" title="Xem chi tiết đầy đủ">
+                        <i class="bi bi-info-circle"></i>
+                      </button>
+
+                    </div>
+
+                    <!-- Modal: Khám Bệnh & Kết luận lâm sàng -->
+                    <div class="modal fade text-start" id="completeModal{{ app.id }}" tabindex="-1" aria-hidden="true">
+                      <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content shadow border-0">
+                          <form method="POST" action="{% url 'update_appointment_status' app.id %}">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="complete">
+                            <div class="modal-header bg-primary text-white py-3">
+                              <h5 class="modal-title fw-bold">
+                                <i class="bi bi-clipboard2-pulse me-2"></i>Hoàn Thành Khám [{{ app.ma_lich_kham }}]
+                              </h5>
+                              <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body p-4">
+                              <div class="bg-light p-3 rounded-3 mb-3 border">
+                                <div class="row g-2 small">
+                                  <div class="col-6"><strong>Bệnh nhân:</strong> {{ app.ten_benh_nhan|default:app.benh_nhan.username }}</div>
+                                  <div class="col-6"><strong>Số điện thoại:</strong> {{ app.so_dien_thoai|default:"Không có" }}</div>
+                                  <div class="col-12 mt-2"><strong>Triệu chứng khai báo:</strong> {{ app.trieu_chung|default:app.ly_do_kham }}</div>
+                                </div>
+                              </div>
+                              <div class="mb-3">
+                                <label class="form-label fw-bold text-dark">
+                                  <i class="bi bi-pencil-square text-primary me-1"></i>Kết Luận Chẩn Đoán & Chỉ Định Điều Trị:
+                                </label>
+                                <textarea name="ghi_chu_bac_si" class="form-control" rows="5" required 
+                                          placeholder="Nhập chẩn đoán lâm sàng, toa thuốc chỉ định hoặc lời dặn bệnh nhân và lịch tái khám...">{{ app.ghi_chu_bac_si|default:'' }}</textarea>
+                                <small class="text-muted d-block mt-1">Thông tin này sẽ được lưu vào bệnh án của bệnh nhân.</small>
+                              </div>
+                            </div>
+                            <div class="modal-footer bg-light py-2">
+                              <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+                              <button type="submit" class="btn btn-primary btn-sm px-3">
+                                <i class="bi bi-check-circle me-1"></i> Lưu Kết Quả & Hoàn Tất
+                              </button>
+                            </div>
+                          </form>
                         </div>
-                        <div class="modal-body">
-                          <p>Bệnh nhân: <strong>{{ app.ten_benh_nhan }}</strong></p>
-                          <div class="mb-3">
-                            <label class="form-label fw-semibold">Kết quả chẩn đoán / Lời dặn của bác sĩ:</label>
-                            <textarea name="ghi_chu_bac_si" class="form-control" rows="4" placeholder="Nhập tóm tắt chẩn đoán, toa thuốc hoặc lịch tái khám..."></textarea>
+                      </div>
+                    </div>
+
+                    <!-- Modal: Xem Bệnh Án Đã Khám -->
+                    <div class="modal fade text-start" id="viewModal{{ app.id }}" tabindex="-1" aria-hidden="true">
+                      <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content shadow border-0">
+                          <div class="modal-header bg-success text-white py-3">
+                            <h5 class="modal-title fw-bold">
+                              <i class="bi bi-journal-medical me-2"></i>Hồ Sơ Đã Khám [{{ app.ma_lich_kham }}]
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                          </div>
+                          <div class="modal-body p-4">
+                            <div class="mb-3">
+                              <label class="text-muted small fw-semibold">BỆNH NHÂN:</label>
+                              <div class="fw-bold fs-6 text-dark">{{ app.ten_benh_nhan|default:app.benh_nhan.username }} &bull; SĐT: {{ app.so_dien_thoai|default:"Chưa có" }}</div>
+                            </div>
+                            <div class="mb-3">
+                              <label class="text-muted small fw-semibold">THỜI GIAN KHÁM:</label>
+                              <div class="text-dark">{{ app.ngay_kham|date:"d/m/Y" }} vào lúc {{ app.gio_kham|time:"H:i" }}</div>
+                            </div>
+                            <div class="mb-3">
+                              <label class="text-muted small fw-semibold">TRIỆU CHỨNG BAN ĐẦU:</label>
+                              <div class="p-2 bg-light rounded border small text-dark">{{ app.trieu_chung|default:app.ly_do_kham }}</div>
+                            </div>
+                            <div class="mb-3">
+                              <label class="text-success small fw-bold">CHẨN ĐOÁN & LỜI DẶN CỦA BÁC SĨ:</label>
+                              <div class="p-3 bg-success-subtle text-dark rounded border border-success-subtle fw-medium" style="white-space: pre-line;">
+                                {{ app.ghi_chu_bac_si|default:"Không có ghi chú thêm." }}
+                              </div>
+                            </div>
+                          </div>
+                          <div class="modal-footer bg-light py-2">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
                           </div>
                         </div>
-                        <div class="modal-footer">
-                          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Đóng</button>
-                          <button type="submit" class="btn btn-primary">Lưu & Hoàn Tất</button>
-                        </div>
-                      </form>
+                      </div>
                     </div>
-                  </div>
-                </div>
 
-              </td>
-            </tr>
-          {% empty %}
-            <tr>
-              <td colspan="7" class="text-center py-4 text-muted">
-                Không có lịch khám nào trong danh mục này.
-              </td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
+                    <!-- Modal: Chi Tiết Đầy Đủ Lịch Khám -->
+                    <div class="modal fade text-start" id="detailModal{{ app.id }}" tabindex="-1" aria-hidden="true">
+                      <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content shadow border-0">
+                          <div class="modal-header bg-light py-3 border-bottom">
+                            <h5 class="modal-title fw-bold text-dark">
+                              <i class="bi bi-info-circle-fill text-primary me-2"></i>Chi Tiết Phiếu Khám [{{ app.ma_lich_kham }}]
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                          </div>
+                          <div class="modal-body p-4">
+                            <ul class="list-group list-group-flush small">
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Mã lịch hẹn:</span>
+                                <span class="fw-bold font-monospace text-primary">{{ app.ma_lich_kham }}</span>
+                              </li>
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Người khám:</span>
+                                <span class="fw-bold text-dark">{{ app.ten_benh_nhan|default:app.benh_nhan.username }}</span>
+                              </li>
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Số điện thoại:</span>
+                                <span>{{ app.so_dien_thoai|default:"Chưa cung cấp" }}</span>
+                              </li>
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Tài khoản đặt lịch:</span>
+                                <span>{{ app.benh_nhan.username }} ({{ app.benh_nhan.email|default:"Không có email" }})</span>
+                              </li>
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Ngày & giờ khám:</span>
+                                <span class="fw-bold">{{ app.ngay_kham|date:"d/m/Y" }} lúc {{ app.gio_kham|time:"H:i" }}</span>
+                              </li>
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Cơ sở bệnh viện:</span>
+                                <span>{{ app.benh_vien.ten_benh_vien }}</span>
+                              </li>
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Khoa phụ trách:</span>
+                                <span>{{ app.chuyen_khoa.ten_chuyen_khoa }}</span>
+                              </li>
+                              <li class="list-group-item d-flex justify-content-between px-0">
+                                <span class="text-muted">Thời điểm đăng ký:</span>
+                                <span>{{ app.created_at|date:"d/m/Y H:i" }}</span>
+                              </li>
+                              <li class="list-group-item px-0 pt-3">
+                                <span class="text-muted d-block mb-1">Mô tả triệu chứng / Lý do khám:</span>
+                                <div class="p-2 bg-light rounded border text-dark">{{ app.trieu_chung|default:app.ly_do_kham|default:"Không có" }}</div>
+                              </li>
+                              {% if app.ghi_chu_bac_si %}
+                                <li class="list-group-item px-0 pt-3">
+                                  <span class="text-success fw-bold d-block mb-1">Ghi chú chẩn đoán bác sĩ:</span>
+                                  <div class="p-2 bg-success-subtle rounded border border-success-subtle text-dark">{{ app.ghi_chu_bac_si }}</div>
+                                </li>
+                              {% endif %}
+                            </ul>
+                          </div>
+                          <div class="modal-footer bg-light py-2">
+                            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Đóng</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                  </td>
+                </tr>
+              {% empty %}
+                <tr>
+                  <td colspan="7" class="text-center py-5 text-muted">
+                    <div class="py-3">
+                      <i class="bi bi-inbox text-secondary" style="font-size: 3rem;"></i>
+                      <h6 class="mt-3 fw-bold text-dark">Không có lịch khám nào trong danh mục này</h6>
+                      <p class="small text-muted mb-0">Các ca đặt lịch mới của người bệnh sẽ tự động xuất hiện tại đây.</p>
+                      {% if search_query or status_filter != 'all' %}
+                        <a href="{% url 'doctor_dashboard' %}?status=all" class="btn btn-sm btn-outline-primary mt-3">
+                          <i class="bi bi-arrow-counterclockwise me-1"></i> Xem toàn bộ lịch khám
+                        </a>
+                      {% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Table Footer Info -->
+        <div class="card-footer bg-white py-3 border-top d-flex flex-wrap justify-content-between align-items-center small text-muted">
+          <div>
+            Hiển thị <strong>{{ appointments|length }}</strong> lịch khám
+            {% if status_filter and status_filter != 'all' %}
+              theo trạng thái: <strong>{{ status_filter }}</strong>
+            {% endif %}
+          </div>
+          <div>
+            <i class="bi bi-shield-check text-success me-1"></i> Bản quyền phần mềm quản trị lâm sàng MedicalAI &copy; 2026
+          </div>
+        </div>
+
+      </div>
+
+    </main>
   </div>
-</div>
-{% endblock %}
+
+  <!-- Clinical Portal Footer -->
+  <footer class="portal-footer">
+    <div class="container-fluid px-4 d-flex flex-wrap justify-content-between align-items-center">
+      <div>
+        <strong>MedicalAI Hospital Management Console</strong> &bull; Hệ thống tiếp nhận khám bệnh trực tuyến.
+      </div>
+      <div>
+        Phiên bản 2.5 &bull; Hỗ trợ kỹ thuật: <a href="tel:19001000" class="text-decoration-none text-muted">1900 1000</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Bootstrap 5 Bundle JS -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Client-side Instant Filter Search Script -->
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const searchInput = document.getElementById('patientSearchInput');
+      const tableRows = document.querySelectorAll('.appointment-row');
+
+      if (searchInput && tableRows.length > 0) {
+        searchInput.addEventListener('input', function () {
+          const keyword = this.value.toLowerCase().trim();
+          tableRows.forEach(row => {
+            const dataText = (row.getAttribute('data-search') || '').toLowerCase();
+            if (keyword === '' || dataText.includes(keyword)) {
+              row.style.display = '';
+            } else {
+              row.style.display = 'none';
+            }
+          });
+        });
+      }
+    });
+  </script>
+
+</body>
+</html>

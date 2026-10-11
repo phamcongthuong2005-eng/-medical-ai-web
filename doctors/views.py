@@ -67,6 +67,7 @@ def doctor_dashboard_view(request):
         return redirect('home')
 
     status_filter = request.GET.get('status', 'all')
+    search_query = request.GET.get('q', '').strip()
     
     if doctor_profile:
         appointments = LichKham.objects.filter(bac_si=doctor_profile).select_related('benh_nhan', 'chuyen_khoa', 'benh_vien')
@@ -76,6 +77,16 @@ def doctor_dashboard_view(request):
 
     if status_filter != 'all':
         appointments = appointments.filter(trang_thai=status_filter)
+
+    if search_query:
+        from django.db.models import Q
+        appointments = appointments.filter(
+            Q(ma_lich_kham__icontains=search_query) |
+            Q(ten_benh_nhan__icontains=search_query) |
+            Q(so_dien_thoai__icontains=search_query) |
+            Q(trieu_chung__icontains=search_query) |
+            Q(benh_nhan__username__icontains=search_query)
+        )
 
     appointments = appointments.order_by('ngay_kham', 'gio_kham')
 
@@ -93,6 +104,7 @@ def doctor_dashboard_view(request):
         'doctor': doctor_profile,
         'appointments': appointments,
         'status_filter': status_filter,
+        'search_query': search_query,
         'stats': stats,
     }
     return render(request, 'doctors/doctor_dashboard.html', context)
