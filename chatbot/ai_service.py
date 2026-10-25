@@ -54,16 +54,22 @@ def call_external_llm(user_message, history=None):
     Hỗ trợ sinh câu trả lời tự nhiên, ân cần như bác sĩ thực thụ.
     """
     system_prompt = (
-        "Bạn là Bác sĩ Trợ lý Y tế AI (Medical AI) thông minh, tận tâm và gần gũi như một người bạn/bác sĩ gia đình thực thụ.\n\n"
-        "QUY TẮC NÓI CHUYỆN VÀ TƯ VẤN:\n"
-        "1. Trò chuyện hoàn toàn tự nhiên, thân thiện như người với người (xưng 'mình' hoặc 'tôi' và gọi 'bạn'). Tuyệt đối KHÔNG trả lời rập khuôn, máy móc.\n"
-        "2. Khi người dùng chia sẻ hoàn cảnh cụ thể (ví dụ: tối qua uống bia/rượu/nằm điều hòa/thức khuya rồi sáng nay rát họng/đau đầu/mệt mỏi):\n"
-        "   - Thấu hiểu và đồng cảm ngay với cảm giác khó chịu của họ.\n"
-        "   - Giải thích cặn kẽ các nguyên nhân trực tiếp một cách khoa học nhưng dễ hiểu, đời thường (tác động của cồn, mất nước, nhiệt độ lạnh, trào ngược axit dạ dày ban đêm, nói to khi nhậu...).\n"
-        "   - Đưa ra các bước xử lý, làm dịu tức thì ngay tại nhà (uống nước ấm bù nước, mật ong chanh/gừng, súc họng nước muối sinh lý ấm, ăn cháo/súp ấm, những thứ cần kiêng hôm nay...).\n"
-        "   - Cảnh báo rõ ràng các dấu hiệu nguy hiểm (khi nào cần đi khám bác sĩ).\n"
-        "   - Kết thúc bằng một câu hỏi han ân cần xem hiện tại họ cảm thấy thế nào, không ép buộc đặt lịch khám.\n"
-        "3. Trình bày khoa học với gạch đầu dòng, in đậm điểm trọng tâm và emoji sinh động, dễ đọc."
+        "Bạn là Bác Sĩ Trợ Lý Y Tế AI (Medical AI) - đóng vai trò là Bác sĩ Gia đình tận tâm, giàu kinh nghiệm, "
+        "tư vấn cho người bệnh (đặc biệt là các cô chú bác lớn tuổi và người dân bình thường).\n\n"
+        "ĐẶC ĐIỂM NGƯỜI BỆNH:\n"
+        "- Người bệnh và người lớn tuổi KHÔNG BIẾT viết prompt hay thuật ngữ y khoa. Họ 'đau sao nói vậy', "
+        "dùng ngôn từ đời thường, tiếng địa phương, từ tượng thanh tượng hình ('nhức cái lưng cúi không nổi', "
+        "'xây xẩm mặt mày chao đảo', 'bụng ấm ách ăn vô muốn ói', 'đầu gối lục cục đau điếng', 'ngực nặng trịch thở không ra hơi', "
+        "'cổ họng vướng như có hột cơm mắc', 'hâm hấp sốt gai lạnh trong xương', 'chuột rút vọp bẻ đau điếng'...). \n"
+        "- Bạn phải lập tức hiểu đúng bản chất cơn đau và cơ quan bị bệnh đằng sau những câu nói mộc mạc đó.\n\n"
+        "PHONG CÁCH TƯ VẤN CỦA BÁC SĨ:\n"
+        "1. Lễ phép, ân cần, gần gũi: Mở đầu bằng 'Dạ, Bác sĩ chào bác/cô/chú ạ!', xưng 'Bác sĩ' hoặc 'mình', gọi người bệnh là 'bác/cô/chú/bạn'. Lắng nghe và trấn an tinh thần người bệnh trước tiên.\n"
+        "2. Giải thích bình dị, dễ hiểu: Tránh từ ngữ chuyên môn hàn lâm. Dùng hình ảnh đời thường để giải thích nguyên nhân gây đau.\n"
+        "3. Hướng dẫn việc cần làm ngay tại nhà: Những việc đơn giản, an toàn làm được ngay bằng đồ dùng sẵn có (nước ấm, chườm ấm/mát, xoa bóp, tư thế nằm/ngồi, món ăn dễ tiêu...).\n"
+        "4. Cảnh báo dấu hiệu nguy hiểm (Cờ đỏ): Dặn dò các triệu chứng nguy kịch cần người nhà hoặc con cháu đưa đến bệnh viện cấp cứu ngay.\n"
+        "5. Hỏi thăm 1-2 câu ngắn gọn, dễ trả lời: Để tìm hiểu thêm diễn tiến bệnh (bị mấy ngày rồi, có đo huyết áp/nhiệt độ chưa...).\n"
+        "6. Hướng dẫn thăm khám ân cần: Gợi ý đúng chuyên khoa, dặn dò người bệnh có thể nhờ con cháu chọn bác sĩ đặt lịch giúp trên màn hình.\n"
+        "7. Trình bày thoáng, dễ đọc cho người lớn tuổi: Chia đoạn rõ ràng, in đậm các ý chính, dùng emoji sinh động, cỡ chữ dễ nhìn."
     )
 
     # 1. Thử gọi Google Gemini API nếu có GEMINI_API_KEY hoặc GOOGLE_API_KEY
@@ -600,6 +606,308 @@ SYMPTOM_CLINICAL_MAP = {
 }
 
 
+# ================= 4B. BỘ TỪ ĐIỂN TRIỆU CHỨNG ĐỜI THƯỜNG / DÂN GIAN CHO NGƯỜI LỚN TUỔI =================
+# Người lớn tuổi và bệnh nhân bình dân không biết viết prompt, họ "đau sao nói vậy"
+ELDERLY_COLLOQUIAL_CLINICAL_MAP = [
+    {
+        'category': 'back_spine',
+        'keywords': [
+            'nhức cái lưng', 'đau cái lưng', 'cúi xuống không được', 'cúi không nổi',
+            'đứng lên ngồi xuống đau', 'nhức buốt từ lưng', 'đau dọc xuống chân', 'cụp lưng',
+            'khom lưng', 'cúi xuống nhức', 'cúi lưng không được', 'nhức thắt lưng', 'mỏi lưng quá',
+            'đau thắt lưng', 'đau ngang thắt lưng', 'đau dọc xuống mông'
+        ],
+        'compound_check': lambda msg: 'lưng' in msg and any(w in msg for w in ['cúi', 'nhức', 'buốt', 'khom', 'cụp', 'không nổi', 'không được', 'điếng', 'rên']),
+        'specialty': 'Cơ xương khớp',
+        'reply': (
+            "Dạ, Bác sĩ chào bác/cô ạ! Nghe bác/cô kể bị đau nhức vùng lưng, cúi xuống không nổi là bác sĩ hiểu ngay cảm giác bức bối, đi đứng khó khăn của bác rồi ạ.\n\n"
+            "🩺 **Bác sĩ giải thích nguyên nhân:**\n"
+            "Ở người lớn tuổi, các đĩa đệm và cột sống thắt lưng theo năm tháng thường bị thoái hóa, giảm độ đàn hồi. Khi mình cúi gập người, xoay người đột ngột hoặc ngồi lâu, các dải cơ quanh cột sống sẽ bị co thắt dữ dội để 'bảo vệ' cột sống, gây ra cơn đau nhức buốt điếng, khiến mình không thể cúi hay đứng thẳng người được.\n\n"
+            "👉 **Những việc bác/cô cần làm ngay tại nhà:**\n"
+            "1. 🛏️ **Nằm nghỉ ngơi đúng tư thế:** Bác nằm nghỉ trên giường có đệm cứng hoặc chiếu phẳng, kê một chiếc gối mỏng dưới khoeo chân (đầu gối hơi co nhẹ) để giảm hoàn toàn áp lực đè lên cột sống lưng.\n"
+            "2. ♨️ **Chườm ấm thắt lưng:** Dùng khăn ấm, túi chườm ấm hoặc ngải cứu sao nóng với muối hạt chườm lên vùng lưng đau khoảng 15 - 20 phút để các cơ được giãn mềm ra.\n"
+            "3. 🚫 **Tuyệt đối tránh:** Không ráng cúi khom người xách đồ nặng, không xoay vặn lưng hay bẻ khớp lưng đột ngột.\n\n"
+            "⚠️ **Dấu hiệu nguy hiểm cần con cháu đưa đi khám ngay:**\n"
+            "Nếu cơn đau nhức buốt lan dọc xuống mông, cẳng chân, hoặc chân có cảm giác tê bì, mất cảm giác, đi tiểu tiện khó khăn, bác cần nhờ người nhà đưa đến bệnh viện kiểm tra ngay để tránh chèn ép dây thần kinh tọa nặng.\n\n"
+            "💬 *Bác/cô bị đau lưng mấy ngày nay rồi ạ? Cơn đau có lan xuống chân hay chỉ đau ngang vùng thắt lưng thôi ạ?*"
+        ),
+        'quick_replies': [
+            'Chỉ đau ngang thắt lưng',
+            'Đau lan xuống mông và chân',
+            'Tôi muốn đặt lịch khám Cơ Xương Khớp',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'knee_joints',
+        'keywords': [
+            'đầu gối lục cục', 'khớp gối lục cục', 'đau hai cái đầu gối', 'nhức đầu gối',
+            'bước cầu thang đau', 'lục cục lạo xạo', 'lạo xạo', 'cứng khớp gối',
+            'đau điếng đầu gối', 'sưng đầu gối', 'khớp gối đau', 'khớp kêu lục cục', 'đầu gối'
+        ],
+        'compound_check': lambda msg: any(k in msg for k in ['đầu gối', 'khớp gối']) and any(w in msg for w in ['lục cục', 'lạo xạo', 'cầu thang', 'đau điếng', 'nhức', 'đau', 'sưng', 'cứng']),
+        'specialty': 'Cơ xương khớp',
+        'reply': (
+            "Dạ, Bác sĩ chào bác/cô ạ! Khớp gối kêu lục cục, lạo xạo và đau buốt khi bước lên cầu thang hay đứng lên ngồi xuống là nỗi khổ rất lớn của các cô bác lớn tuổi mà bác sĩ gặp hàng ngày ở phòng khám.\n\n"
+            "🩺 **Bác sĩ giải thích vì sao gối lại kêu và đau:**\n"
+            "Lớp sụn bọc ở hai đầu xương khớp gối của mình giống như một lớp đệm cao su êm ái. Qua nhiều năm đi lại, lớp sụn này bị bào mòn mỏng đi, kèm theo lượng dịch nhờn bôi trơn khớp bị khô cạn. Khi bác co duỗi gối, hai đầu xương cọ xát trực tiếp vào nhau phát ra tiếng 'lục cục' và gây đau nhức buốt điếng.\n\n"
+            "👉 **Lời khuyên bác sĩ dặn bác chăm sóc gối tại nhà:**\n"
+            "1. 🪜 **Hạn chế leo cầu thang & ngồi xổm:** Tuyệt đối không ngồi xổm, không ngồi xếp bằng dưới đất hay leo trèo cầu thang nhiều, vì mỗi lần gập gối như vậy tải trọng đè lên khớp gối gấp 4 - 5 lần trọng lượng cơ thể.\n"
+            "2. ♨️ **Chườm ấm và xoa bóp:** Mỗi sáng thức dậy, bác dùng hai lòng bàn tay xoa xát nhẹ nhàng quanh hai đầu gối 5 - 10 phút cho nóng ấm lên trước khi bước chân xuống giường để tránh bị cứng khớp.\n"
+            "3. 🚴 **Vận động nhẹ:** Bác có thể nằm trên giường tập động tác đạp xe đạp trên không hoặc đi bộ nhẹ nhàng trên đường bằng phẳng (không đi bộ quá 30 phút một lần).\n\n"
+            "⚠️ **Khi nào cần đi khám:**\n"
+            "Nếu khớp gối sưng to, nóng đỏ, sờ vào thấy bùng nhùng (tràn dịch khớp) hoặc đau đến mức không thể đặt chân xuống đất bước đi, bác cần đi khám chuyên khoa Cơ Xương Khớp sớm để bác sĩ kiểm tra và hút dịch/tiêm dưỡng chất khớp nhé.\n\n"
+            "💬 *Bác bị đau một bên hay cả hai bên gối ạ? Bác có thể nhờ con cháu chọn bác sĩ bên dưới để đặt lịch khám giúp bác nhé!*"
+        ),
+        'quick_replies': [
+            'Đau cả hai đầu gối',
+            'Đầu gối có sưng nhẹ',
+            'Tôi muốn đặt lịch khám Cơ Xương Khớp',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'dizziness_vertigo',
+        'keywords': [
+            'xây xẩm mặt mày', 'chao đảo', 'nhà cửa quay cuồng', 'chóng mặt như chong chóng',
+            'bước xuống giường thấy quay cuồng', 'váng đầu', 'bủn rủn tay chân', 'hoa mắt tối sầm',
+            'quay cuồng đầu óc', 'xây xẩm'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['xây xẩm', 'chao đảo', 'quay cuồng', 'nhà cửa quay']),
+        'specialty': 'Thần kinh',
+        'reply': (
+            "Dạ, Bác sĩ chào bác/cô ạ! Triệu chứng ngủ dậy bước xuống giường thấy xây xẩm mặt mày, nhà cửa chao đảo quay cuồng như chong chóng là một tình trạng làm người bệnh rất sợ hãi và dễ bị ngã.\n\n"
+            "🩺 **Bác sĩ giải thích nguyên nhân:**\n"
+            "Ở người lớn tuổi, phần lớn các cơn chóng mặt quay cuồng kiểu này xuất phát từ 2 nguyên nhân chính:\n"
+            "1. **Rối loạn tiền đình ốc tai:** Cơ quan giữ thăng bằng ở tai trong bị thiếu máu nuôi hoặc các tinh thể thạch nhĩ bị xô lệch vị trí khi bác xoay trở đầu.\n"
+            "2. **Hạ huyết áp tư thế hoặc thiếu máu não:** Khi bác đang nằm mà ngồi bật dậy hoặc đứng lên quá nhanh, máu chưa kịp bơm đủ lên não bộ, gây hoa mắt, tối sầm mặt mày.\n\n"
+            "👉 **Những việc bác/cô cần làm ngay lúc này:**\n"
+            "1. 🛏️ **Nằm yên ngay lập tức:** Bác nằm yên trên giường ở tư thế nghiêng sang bên đỡ chóng mặt hơn, nhắm mắt lại, phòng ốc thoáng gió và yên tĩnh, không quay đầu qua lại đột ngột.\n"
+            "2. 🫚 **Uống nước ấm hoặc trà gừng ấm:** Uống một ly nước ấm pha chút gừng tươi đập dập giúp làm ấm cơ thể, kích thích máu lưu thông lên não và giảm cảm giác nôn nao.\n"
+            "3. 🩸 **Đo huyết áp:** Bác nhờ con cháu lấy máy đo huyết áp tại nhà đo xem huyết áp đang cao hay thấp để xử lý kịp thời.\n\n"
+            "⚠️ **DẤU HIỆU CẢNH BÁO ĐỘT QUỴ - CẦN CẤP CỨU 115 NGAY:**\n"
+            "Nếu chóng mặt kèm theo: **méo miệng, nói ngọng khó phát âm, nhìn một thành hai, hoặc yếu liệt một bên tay chân**, gia đình phải đưa bác vào phòng cấp cứu bệnh viện ngay lập tức trong khung giờ vàng!\n\n"
+            "💬 *Hiện tại bác đã nằm nghỉ chưa ạ? Bác có bị buồn nôn hay nôn ói gì không ạ?*"
+        ),
+        'quick_replies': [
+            'Hiện tại đang nằm nghỉ',
+            'Có buồn nôn và nôn ói',
+            'Tôi muốn đặt lịch khám Thần kinh',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'stomach_indigestion',
+        'keywords': [
+            'ấm ách cái bụng', 'ấm ách', 'ăn vô muốn ói', 'ăn vô là muốn ói', 'mắc ói',
+            'lợm giọng', 'ợ chua lợm', 'bụng cứ râm ran', 'bụng chướng phình', 'ăn không tiêu',
+            'ăn vô tức bụng', 'cồn cào ruột gan', 'đau quặn bụng', 'lợm cổ'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['ấm ách', 'muốn ói', 'mắc ói', 'lợm giọng', 'râm ran']) and any(k in msg for k in ['bụng', 'dạ dày', 'ăn', 'ruột']),
+        'specialty': 'Tiêu hóa',
+        'reply': (
+            "Dạ, Bác sĩ chào bác/cô ạ! Cảm giác bụng cứ ấm ách, râm ran khó chịu, ăn vào là muốn ói và ợ chua lợm giọng làm cho người bệnh ăn không ngon, ngủ không yên, sụt cân và rất mệt mỏi.\n\n"
+            "🩺 **Bác sĩ giải thích vì sao lại bị như vậy:**\n"
+            "Tình trạng này cho thấy niêm mạc dạ dày đang bị viêm tấy, co bóp kém và tăng tiết nhiều axit dịch vị. Axit dư thừa cùng thức ăn chưa kịp tiêu hóa bị ứ đọng lại, sinh hơi làm chướng bụng rồi trào ngược lên thực quản, gây cảm giác lợm giọng buồn nôn và đắng chát ở cuống họng.\n\n"
+            "👉 **Những việc bác nên làm để bụng êm lại:**\n"
+            "1. 🥣 **Ăn cháo loãng hoặc súp ấm:** Tạm thời hôm nay bác nên ăn các món cháo hạt sen, súp gà hoặc bột yến mạch nấu mềm, chia thành 4 - 5 bữa nhỏ trong ngày để dạ dày không phải co bóp nhọc nhằn.\n"
+            "2. 🍯 **Tinh bột nghệ mật ong ấm:** Buổi sáng trước khi ăn 30 phút, bác uống 1 ly nước ấm pha 1 thìa tinh bột nghệ và 1 thìa mật ong. Tinh bột nghệ giúp làm lành vết trợt niêm mạc, mật ong giúp giảm viêm và êm bụng rất nhanh.\n"
+            "3. 🚫 **Những thứ cần kiêng:** Tuyệt đối không ăn đồ chua (chanh, cam chua, dưa cà muối), đồ cay nóng, đồ chiên ngập dầu và không nằm ngay sau khi vừa ăn xong.\n\n"
+            "⚠️ **Dấu hiệu nguy hiểm cần đi viện ngay:**\n"
+            "Nếu bác nôn ra chất màu đen như bã cà phê, đi ngoài phân đen có mùi tanh, hoặc đau quặn dữ dội bụng cứng như gỗ, gia đình cần đưa bác đi bệnh viện cấp cứu ngay lập tức!\n\n"
+            "💬 *Bác bị ấm ách bụng mấy ngày rồi ạ? Cơn đau có xuất hiện lúc đói hay lúc vừa ăn no xong ạ?*"
+        ),
+        'quick_replies': [
+            'Đau lúc đói cồn cào',
+            'Ăn no xong tức bụng khó thở',
+            'Tôi muốn đặt lịch khám Tiêu hóa',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'chest_heart',
+        'keywords': [
+            'nặng ngực như đá đè', 'thở không ra hơi', 'hụt hơi', 'tức ngực thở dốc',
+            'nặng trịch ở ngực', 'nhói nhói ở tim', 'tim đập thình thịch', 'ngộp thở', 'thở hụt hơi'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['đá đè', 'không ra hơi', 'hụt hơi', 'thở dốc', 'ngộp thở']) and any(k in msg for k in ['ngực', 'tim', 'thở']),
+        'specialty': 'Tim mạch',
+        'reply': (
+            "Dạ, Bác sĩ chào bác ạ! Triệu chứng nặng ngực như có đá đè và thở không ra hơi là một dấu hiệu tim mạch - hô hấp hết sức quan trọng mà chúng ta không được phép chủ quan bác nhé!\n\n"
+            "🩺 **Bác sĩ dặn dò y khoa:**\n"
+            "Cảm giác tức nghẹn lồng ngực có thể xuất phát từ việc các nhánh mạch máu nuôi tim (mạch vành) bị co thắt hoặc xơ vữa làm giảm lượng máu nuôi cơ tim, hoặc do chức năng tim và phổi đang bị quá tải.\n\n"
+            "👉 **Việc bác cần làm ngay lúc này:**\n"
+            "1. 🪑 **Ngồi nghỉ ngơi ngay lập tức:** Bác dừng mọi hoạt động, ngồi tựa lưng vào ghế hoặc nằm nửa nằm nửa ngồi ở nơi thoáng gió, nới lỏng cúc áo cổ và dây thắt lưng.\n"
+            "2. 🫁 **Hít thở chậm và sâu:** Hít vào từ từ bằng mũi, thở nhẹ nhàng bằng miệng để ổn định nhịp thở và nhịp tim.\n"
+            "3. 👥 **Báo ngay cho người nhà:** Bác gọi ngay người thân trong nhà lại ngồi cạnh để theo dõi sát tình trạng.\n\n"
+            "⚠️ **CẢNH BÁO CẤP CỨU TIM MẠCH KHẨN CẤP:**\n"
+            "Nếu cơn đau tức ngực kéo dài trên **10 - 15 phút**, đau lan lên hàm, cổ, vai hoặc xuống cánh tay trái, kèm theo **vã mồ hôi lạnh, hoa mắt, choáng váng**, gia đình phải **gọi cấp cứu 115 hoặc đưa bác đến bệnh viện có khoa Tim mạch gần nhất ngay lập tức**!\n\n"
+            "💬 *Hiện tại cơn tức ngực của bác đã đỡ chưa ạ? Bác có tiền sử tăng huyết áp hay bệnh tim từ trước không ạ?*"
+        ),
+        'quick_replies': [
+            'Có tiền sử tăng huyết áp',
+            'Đang ngồi nghỉ ngơi',
+            'Tôi muốn đặt lịch khám Tim mạch',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'throat_globus',
+        'keywords': [
+            'vướng cổ họng', 'như có hột cơm', 'hột cơm mắc', 'khạc hoài không ra',
+            'nuốt vướng', 'nghẹn nghẹn ở cổ', 'khô khé cổ', 'vướng họng', 'vướng ở cổ', 'nuốt nghẹn'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['hột cơm', 'khạc hoài', 'nuốt vướng', 'nghèn nghẹn', 'vướng víu']) and any(k in msg for k in ['họng', 'cổ']),
+        'specialty': 'Tai Mũi Họng',
+        'reply': (
+            "Dạ, Bác sĩ chào bác/cô ạ! Cảm giác cổ họng cứ vướng víu như có hột cơm hay sợi tóc mắc ở trỏng, khạc hoài không ra nuốt cũng không trôi là triệu chứng mà các cô bác lớn tuổi đến phòng khám của bác sĩ than phiền rất nhiều.\n\n"
+            "🩺 **Bác sĩ giải thích nguyên nhân:**\n"
+            "Y học gọi đây là chứng **'Loạn cảm họng'**. Hơn 80% trường hợp không phải là có dị vật thật mắc trong họng, mà là do **axit dịch vị dạ dày ban đêm trào ngược lên vòm họng** làm niêm mạc vùng đáy họng và sụn phễu bị sưng phù nề nhẹ. Khi nuốt, vùng niêm mạc phù này cọ xát tạo ra cảm giác cộm nghẹn y như có hột cơm mắc ở đó.\n\n"
+            "👉 **Cách điều trị và chăm sóc tại nhà:**\n"
+            "1. 🧂 **Súc họng nước muối sinh lý ấm:** Ngửa cổ khò sâu bằng nước muối ấm 0.9% ngày 3 lần để làm sạch axit trào ngược bám ở họng.\n"
+            "2. 🛌 **Kê cao đầu giường:** Khi ngủ, bác kê cao đầu và vai khoảng 15cm (dùng gối chống trào ngược) để trọng lực giữ axit không trào lên họng lúc ban đêm.\n"
+            "3. ⏰ **Ăn tối sớm:** Bác nhớ ăn tối trước giờ đi ngủ ít nhất 3 tiếng và không ăn vặt hay uống sữa no sát giờ ngủ nhé.\n\n"
+            "💬 *Bác bị vướng họng lâu chưa ạ? Sáng dậy bác có hay bị ợ hơi, đắng miệng hay chua cổ không ạ?*"
+        ),
+        'quick_replies': [
+            'Bị vướng họng nhiều ngày nay',
+            'Sáng dậy hay đắng miệng',
+            'Tôi muốn đặt lịch khám Tai Mũi Họng',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'night_urination',
+        'keywords': [
+            'tiểu đêm nhiều', 'đêm đi tiểu miết', 'tiểu 4 5 lần', 'tiểu 3 4 lần',
+            'tiểu rắt', 'tiểu buốt', 'đái dắt', 'tiểu không hết', 'rặn tiểu khó', 'đêm thức dậy đi tiểu'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['tiểu đêm', 'đêm đi tiểu', 'tiểu miết', 'tiểu rắt', 'tiểu buốt', 'đái dắt']),
+        'specialty': 'Nội tổng quát',
+        'reply': (
+            "Dạ, Bác sĩ chào bác ạ! Ban đêm cứ phải thức dậy đi tiểu 3 - 4 lần khiến giấc ngủ bị gián đoạn, ban ngày người uể oải mệt mỏi là nỗi khổ của rất nhiều cô bác lớn tuổi.\n\n"
+            "🩺 **Bác sĩ giải thích nguyên nhân:**\n"
+            "- Ở các bác nam giới lớn tuổi: Nguyên nhân hàng đầu là do **phì đại tuyến tiền liệt lành tính** (tuyến tiền liệt to ra chèn ép vào cổ bàng quang, khiến nước tiểu không thoát hết được, gây tiểu nhiều lần, dòng tiểu yếu, tiểu rắt).\n"
+            "- Ở các bác nữ: Thường do bàng quang tăng hoạt, sa sàn chậu hoặc viêm đường tiết niệu nhẹ.\n"
+            "- Ngoài ra, bệnh tiểu đường (đường huyết cao) cũng kích thích bàng quang đi tiểu liên tục.\n\n"
+            "👉 **Những lời khuyên giúp bác hạn chế tiểu đêm:**\n"
+            "1. 💧 **Giảm uống nước sau 7 giờ tối:** Ban ngày bác uống đủ nước, nhưng sau 7h tối hạn chế uống canh nhiều nước, không uống trà đặc hay cà phê buổi tối.\n"
+            "2. 🚹 **Đi tiểu 2 lần trước khi ngủ:** Trước khi lên giường bác đi tiểu một lần, nằm đọc sách hay nghe radio 15 phút rồi trước khi ngủ hẳn đi tiểu thêm một lần nữa để xả cạn bàng quang.\n"
+            "3. 🏥 **Nên đi siêu âm kiểm tra:** Bác nên nhờ con cháu đưa đi khám chuyên khoa để siêu âm tuyến tiền liệt và xét nghiệm nước tiểu, bác sĩ sẽ kê thuốc giúp co nhỏ tiền liệt tuyến hoặc ổn định bàng quang, bác sẽ ngủ ngon giấc suốt đêm.\n\n"
+            "💬 *Bác đi tiểu dòng nước tiểu có mạnh không ạ? Có bị buốt rát hay són tiểu không ạ?*"
+        ),
+        'quick_replies': [
+            'Tiểu đêm 3 - 4 lần',
+            'Có cảm giác tiểu không hết bãi',
+            'Tôi muốn đặt lịch khám',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'leg_cramps',
+        'keywords': [
+            'chuột rút', 'vọp bẻ', 'bắp chân rút cứng', 'rút bắp chân',
+            'chuột rút ban đêm', 'co rút bắp chân', 'đau thắt bắp chuối'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['chuột rút', 'vọp bẻ', 'rút cứng']) and any(k in msg for k in ['chân', 'bắp chân', 'đêm']),
+        'specialty': 'Cơ xương khớp',
+        'reply': (
+            "Dạ, Bác sĩ chào bác ạ! Đang ngủ ngon giấc ban đêm mà bắp chân bị giật rút cứng đờ, đau điếng không duỗi chân ra được (dân gian mình hay gọi là vọp bẻ hay chuột rút) là tình trạng rất hay gặp ở người lớn tuổi.\n\n"
+            "🩺 **Bác sĩ giải thích nguyên nhân:**\n"
+            "Hiện tượng này xảy ra do cơ bắp chân bị thiếu hụt khoáng chất (Canxi, Magie, Kali), hoặc do suy giãn tĩnh mạch chi dưới làm máu ứ trệ, hoặc đơn giản là do ban đêm bị lạnh chân làm co mạch máu đột ngột.\n\n"
+            "👉 **Mẹo xử lý ngay lập tức khi bị chuột rút:**\n"
+            "1. 🦶 **Kéo ngược mũi chân về phía đầu gối:** Khi bắp chân vừa bị rút cứng, bác ráng giữ thẳng chân và dùng tay kéo mạnh mũi bàn chân ngửa ngược về phía đầu gối. Làm như vậy cơ bắp chân sẽ bị kéo giãn ra và cơn chuột rút sẽ nhả ngay trong vòng 15 - 30 giây!\n"
+            "2. ♨️ **Xoa bóp và giữ ấm:** Sau khi nhả cơ, bác xoa bóp nhẹ nhàng từ cổ chân lên bắp chuối bằng dầu gừng ấm.\n"
+            "3. 🧦 **Cách phòng ngừa ban đêm:** Bác nên ngâm chân bằng nước ấm với chút muối gừng trước khi ngủ 15 phút, khi ngủ nên mang tất (vớ) mỏng để giữ ấm hai bàn chân và kê chân cao hơn mình khoảng 10cm.\n\n"
+            "💬 *Bác có hay bị chuột rút thường xuyên không ạ? Bác có cảm giác tê bì hay nổi gân xanh ngoằn ngoèo ở bắp chân không ạ?*"
+        ),
+        'quick_replies': [
+            'Hay bị chuột rút lúc gần sáng',
+            'Có cảm giác tê bì chân',
+            'Tôi muốn đặt lịch khám Cơ Xương Khớp',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'eye_vision',
+        'keywords': [
+            'mắt kèm nhèm', 'chảy nước mắt sống', 'mắt mờ', 'nhìn mờ mờ',
+            'mắt khô cộm', 'mắt đỏ hoe', 'cộm xốn mắt', 'mắt mờ đi'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['kèm nhèm', 'nước mắt sống', 'cộm xốn', 'mờ mờ']) and 'mắt' in msg,
+        'specialty': 'Mắt (Nhãn khoa)',
+        'reply': (
+            "Dạ, Bác sĩ chào bác/cô ạ! Mắt bị kèm nhèm, cộm xốn và hay bị chảy nước mắt sống (nước mắt cứ tự trào ra khi ra gió hoặc nhìn lâu) là bệnh lý tuổi già rất phổ biến.\n\n"
+            "🩺 **Bác sĩ giải thích nguyên nhân:**\n"
+            "- Khi có tuổi, tuyến lệ giảm tiết nước mắt tự nhiên gây ra bệnh **khô mắt tuổi già**. Mắt bị khô sẽ phản xạ bằng cách kích thích chảy tràn nước mắt sống nhưng chất lượng nước mắt loãng, không bôi trơn được giác mạc.\n"
+            "- Ngoài ra, nhìn mờ mờ như có màng sương che phủ thường là dấu hiệu ban đầu của **đục thủy tinh thể (cườm khô)**.\n\n"
+            "👉 **Cách chăm sóc mắt tại nhà:**\n"
+            "1. 💧 **Nhỏ nước mắt nhân tạo:** Bác mua loại nước mắt nhân tạo không chất bảo quản (như Sanlein hoặc Systane Ultra) nhỏ mỗi ngày 3 - 4 lần để giữ ẩm và làm dịu mắt.\n"
+            "2. 🕶️ **Đeo kính râm khi ra đường:** Giúp chắn gió, bụi bẩn và tia cực tím kích ứng mắt.\n"
+            "3. 🚫 **Không dụi mắt:** Tuyệt đối không dùng tay hay vạt áo dụi mắt vì rất dễ làm trầy xước giác mạc và gây nhiễm trùng.\n\n"
+            "💬 *Bác nhìn mờ cả hai mắt hay một mắt ạ? Mắt có bị đau nhức sâu trong hốc mắt hay nhìn thấy quầng sáng màu sắc không ạ?*"
+        ),
+        'quick_replies': [
+            'Hay chảy nước mắt sống khi ra gió',
+            'Nhìn mờ như có màng sương',
+            'Tôi muốn đặt lịch khám Mắt',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    },
+    {
+        'category': 'children_care',
+        'keywords': [
+            'cháu tôi nó sốt', 'cháu tôi ho', 'ho sù sụ', 'em bé quấy khóc',
+            'con bé nôn ói', 'sổ mũi lòng thòng', 'cháu tôi bị sốt', 'cháu tôi bị ho'
+        ],
+        'compound_check': lambda msg: any(w in msg for w in ['cháu tôi', 'con bé', 'thằng bé', 'em bé']) and any(k in msg for k in ['sốt', 'ho', 'quấy', 'khóc', 'ói', 'sổ mũi']),
+        'specialty': 'Nhi khoa',
+        'reply': (
+            "Dạ, Bác sĩ chào ông/bà ạ! Chăm cháu nhỏ khi con bị ốm, ho sù sụ cả đêm quấy khóc quả thực làm ông bà, cha mẹ xót ruột và lo lắng vô cùng.\n\n"
+            "🩺 **Lời khuyên bác sĩ nhi khoa hướng dẫn ông bà chăm cháu:**\n"
+            "1. 🌡️ **Cặp nhiệt độ cho cháu:** Bác dùng nhiệt kế kẹp nách hoặc đo trán cho cháu. Nếu cháu sốt dưới 38.5°C thì chưa cần cho uống thuốc hạ sốt, chỉ cần cởi bớt quần áo ấm, cho bé mặc đồ mỏng thoáng.\n"
+            "2. 🧽 **Lau ấm cho bé:** Dùng 5 chiếc khăn mềm thấm nước ấm (ấm như nước tắm bé, khoảng 37 độ) đắp vào trán, 2 nách và 2 bên bẹn của cháu để hạ nhiệt an toàn. *Tuyệt đối không dùng nước đá lạnh hay chanh chà vào người bé nhé.*\n"
+            "3. 💧 **Uống thuốc hạ sốt khi sốt cao >= 38.5°C:** Cho bé uống thuốc Paracetamol (dạng gói Hapacol hoặc siro) theo đúng cân nặng của bé: **10 - 15mg cho mỗi kg cân nặng** (ví dụ bé 10kg thì uống gói 150mg), cách nhau ít nhất 4 - 6 tiếng nếu còn sốt.\n"
+            "4. 👃 **Nhỏ mũi nước muối sinh lý:** Nhỏ vài giọt nước muối ấm vào mũi để dịch mũi loãng ra, giúp bé dễ thở và đỡ ho sù sụ khi ngủ.\n\n"
+            "⚠️ **DẤU HIỆU CẦN ĐƯA CHÁU ĐI VIỆN CẤP CỨU NGAY:**\n"
+            "- Bé sốt cao co giật, mắt nhìn ngược.\n"
+            "- Bé thở nhanh, rút lõm lồng ngực (khi hít vào ngực và sườn lõm sâu vào).\n"
+            "- Bé ngủ li bì khó đánh thức, bỏ bú, hoặc nôn ói tất cả mọi thứ vừa ăn.\n\n"
+            "💬 *Cháu nhà mình được mấy tuổi và nặng bao nhiêu kg rồi ạ? Bé sốt bao nhiêu độ rồi bác ơi?*"
+        ),
+        'quick_replies': [
+            'Bé sốt 38.5 độ',
+            'Bé ho nhiều về đêm',
+            'Tôi muốn đặt lịch khám Nhi khoa',
+            'Chưa, tôi muốn hỏi thêm'
+        ]
+    }
+]
+
+
+def handle_colloquial_patient_complaints(msg_clean, user_message):
+    """
+    Xử lý các câu nói bình dân, từ ngữ địa phương, nôm na 'đau sao nói vậy' của người lớn tuổi
+    """
+    for item in ELDERLY_COLLOQUIAL_CLINICAL_MAP:
+        for kw in item['keywords']:
+            if kw in msg_clean:
+                return {
+                    'reply': item['reply'] + f"\n\n{DISCLAIMER_TEXT}",
+                    'stage': 'ask_booking_confirmation',
+                    'suggested_specialty': item['specialty'],
+                    'quick_replies': item['quick_replies']
+                }
+        if 'compound_check' in item and item['compound_check'](msg_clean):
+            return {
+                'reply': item['reply'] + f"\n\n{DISCLAIMER_TEXT}",
+                'stage': 'ask_booking_confirmation',
+                'suggested_specialty': item['specialty'],
+                'quick_replies': item['quick_replies']
+            }
+    return None
+
+
 def get_doctor_active_slots(doctor, max_slots=8):
     """
     Lấy danh sách các khung giờ khám còn trống của bác sĩ.
@@ -876,6 +1184,15 @@ def process_medical_chat(user_message, session=None):
         if llm_reply:
             screen_strain_res['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
         response_data.update(screen_strain_res)
+        return response_data
+
+    # 4.5 Xử lý tiếng nói mộc mạc đời thường của người bệnh & người lớn tuổi (Không biết gõ prompt, đau sao nói vậy)
+    colloquial_res = handle_colloquial_patient_complaints(msg_clean, user_message)
+    if colloquial_res:
+        llm_reply = call_external_llm(user_message, conversation_history)
+        if llm_reply:
+            colloquial_res['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
+        response_data.update(colloquial_res)
         return response_data
 
     # ================= BƯỚC 5: HỎI ĐÁP DINH DƯỠNG, ĂN UỐNG & SỐNG KHỎE =================
