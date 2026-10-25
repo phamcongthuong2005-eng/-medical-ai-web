@@ -1,96 +1,224 @@
 import re
 import json
 import os
-import requests
+import urllib.request
+import urllib.error
+try:
+    import requests
+except ImportError:
+    requests = None
 from datetime import datetime, timedelta
 from hospitals.models import TinhThanh, BenhVien, ChuyenKhoa
 from doctors.models import BacSi, LichLamViec
 from django.utils import timezone
 
-# ================= 1. BỘ TRI THỨC Y TẾ, DINH DƯỠNG, SỨC KHỎE & ĂN UỐNG ĐA DẠNG =================
+# Load .env file nếu có
+try:
+    from pathlib import Path
+    env_path = Path(__file__).resolve().parent.parent / '.env'
+    if env_path.exists():
+        with open(env_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    k, v = line.split('=', 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
+except Exception:
+    pass
+
+DISCLAIMER_TEXT = "💡 *Lưu ý y khoa: Thông tin do AI cung cấp mang tính chất tham khảo ban đầu. Khi triệu chứng nặng hoặc kéo dài, bạn nên thăm khám trực tiếp tại cơ sở y tế.*"
+
+
+# ================= 1. GỌI EXTERNAL LLM (GOOGLE GEMINI & OPENAI) =================
+def _http_post_json(url, headers, payload, timeout=12):
+    """Gửi HTTP POST JSON hỗ trợ cả requests và urllib chuẩn của Python"""
+    try:
+        if requests is not None:
+            resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code == 200:
+                return resp.json()
+        else:
+            req_data = json.dumps(payload).encode('utf-8')
+            req = urllib.request.Request(url, data=req_data, headers=headers, method='POST')
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                if resp.status == 200:
+                    return json.loads(resp.read().decode('utf-8'))
+    except Exception:
+        pass
+    return None
+
+
+def call_external_llm(user_message, history=None):
+    """
+    Gọi Google Gemini API hoặc OpenAI API nếu có API key trong biến môi trường.
+    Hỗ trợ sinh câu trả lời tự nhiên, ân cần như bác sĩ thực thụ.
+    """
+    system_prompt = (
+        "Bạn là Bác sĩ Trợ lý Y tế AI (Medical AI) thông minh, tận tâm và gần gũi như một người bạn/bác sĩ gia đình thực thụ.\n\n"
+        "QUY TẮC NÓI CHUYỆN VÀ TƯ VẤN:\n"
+        "1. Trò chuyện hoàn toàn tự nhiên, thân thiện như người với người (xưng 'mình' hoặc 'tôi' và gọi 'bạn'). Tuyệt đối KHÔNG trả lời rập khuôn, máy móc.\n"
+        "2. Khi người dùng chia sẻ hoàn cảnh cụ thể (ví dụ: tối qua uống bia/rượu/nằm điều hòa/thức khuya rồi sáng nay rát họng/đau đầu/mệt mỏi):\n"
+        "   - Thấu hiểu và đồng cảm ngay với cảm giác khó chịu của họ.\n"
+        "   - Giải thích cặn kẽ các nguyên nhân trực tiếp một cách khoa học nhưng dễ hiểu, đời thường (tác động của cồn, mất nước, nhiệt độ lạnh, trào ngược axit dạ dày ban đêm, nói to khi nhậu...).\n"
+        "   - Đưa ra các bước xử lý, làm dịu tức thì ngay tại nhà (uống nước ấm bù nước, mật ong chanh/gừng, súc họng nước muối sinh lý ấm, ăn cháo/súp ấm, những thứ cần kiêng hôm nay...).\n"
+        "   - Cảnh báo rõ ràng các dấu hiệu nguy hiểm (khi nào cần đi khám bác sĩ).\n"
+        "   - Kết thúc bằng một câu hỏi han ân cần xem hiện tại họ cảm thấy thế nào, không ép buộc đặt lịch khám.\n"
+        "3. Trình bày khoa học với gạch đầu dòng, in đậm điểm trọng tâm và emoji sinh động, dễ đọc."
+    )
+
+    # 1. Thử gọi Google Gemini API nếu có GEMINI_API_KEY hoặc GOOGLE_API_KEY
+    gemini_key = os.environ.get('GEMINI_API_KEY') or os.environ.get('GOOGLE_API_KEY', '').strip()
+    if gemini_key:
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={gemini_key}"
+            headers = {'Content-Type': 'application/json'}
+            
+            contents = []
+            if history:
+                for h in history[-4:]:
+                    role = 'user' if h.get('role') == 'user' else 'model'
+                    contents.append({
+                        'role': role,
+                        'parts': [{'text': h.get('content', '')}]
+                    })
+            contents.append({
+                'role': 'user',
+                'parts': [{'text': f"[Chỉ dẫn hệ thống: {system_prompt}]\n\nCâu hỏi/Triệu chứng của người bệnh: {user_message}"}]
+            })
+
+            payload = {
+                'contents': contents,
+                'generationConfig': {
+                    'temperature': 0.7,
+                    'maxOutputTokens': 1200
+                }
+            }
+            res_data = _http_post_json(url, headers, payload, timeout=12)
+            if res_data:
+                candidates = res_data.get('candidates', [])
+                if candidates and 'content' in candidates[0]:
+                    parts = candidates[0]['content'].get('parts', [])
+                    if parts and 'text' in parts[0]:
+                        return parts[0]['text'].strip()
+        except Exception:
+            pass
+
+    # 2. Thử gọi OpenAI API nếu có OPENAI_API_KEY
+    openai_key = os.environ.get('OPENAI_API_KEY', '').strip()
+    if openai_key:
+        try:
+            headers = {
+                'Authorization': f"Bearer {openai_key}",
+                'Content-Type': 'application/json'
+            }
+            messages = [{'role': 'system', 'content': system_prompt}]
+            if history:
+                for h in history[-4:]:
+                    messages.append({'role': h.get('role', 'user'), 'content': h.get('content', '')})
+            messages.append({'role': 'user', 'content': user_message})
+
+            payload = {
+                'model': 'gpt-4o-mini',
+                'messages': messages,
+                'temperature': 0.7,
+                'max_tokens': 1200
+            }
+            res_json = _http_post_json('https://api.openai.com/v1/chat/completions', headers, payload, timeout=12)
+            if res_json and 'choices' in res_json:
+                return res_json['choices'][0]['message']['content'].strip()
+        except Exception:
+            pass
+
+    return None
+
+
+# ================= 2. BỘ TRI THỨC Y TẾ & DINH DƯỠNG SỐNG KHỎE =================
 HEALTH_KNOWLEDGE_BASE = [
-    # --- DINH DƯỠNG & ĂN UỐNG CHO SỨC KHỎE ---
-    {
-        'category': 'nutrition_general',
-        'keywords': ['ăn gì', 'chế độ ăn', 'dinh dưỡng', 'thực đơn', 'thực phẩm tốt', 'thực phẩm nên kiêng', 'nên ăn gì', 'kiêng ăn gì', 'uống gì'],
-        'title': '🥗 Tư Vấn Dinh Dưỡng & Ăn Uống Khoa Học',
-        'response': (
-            "🥗 **Lời khuyên dinh dưỡng & ăn uống lành mạnh từ Bác sĩ AI:**\n\n"
-            "1. **Nguyên tắc đĩa thức ăn cân bằng (MyPlate):**\n"
-            "   - **1/2 đĩa:** Rau xanh đa màu sắc và trái cây tươi (cung cấp chất xơ, vitamin A, C, E, kẽm).\n"
-            "   - **1/4 đĩa:** Chất đạm nạc chất lượng cao (ức gà, cá biển sâu, trứng, đậu hũ, thịt bò nạc).\n"
-            "   - **1/4 đĩa:** Tinh bột hấp thu chậm (gạo lứt, yến mạch, khoai lang, quinoa) giúp ổn định đường huyết.\n\n"
-            "2. **Thói quen ăn uống khoa học:**\n"
-            "   - 💧 **Uống đủ nước:** 1.5 - 2.5 lít nước lọc mỗi ngày (tương đương 40ml / kg cân nặng).\n"
-            "   - 🧂 **Giảm muối & đường:** Ăn nhạt giúp bảo vệ tim mạch, huyết áp và thận; hạn chế nước ngọt đóng chai.\n"
-            "   - 🍳 **Chế biến lành mạnh:** Ưu tiên hấp, luộc, áp chảo nhẹ; hạn chế đồ chiên xào ngập dầu mỡ.\n"
-            "   - ⏰ **Ăn đúng giờ:** Không bỏ bữa sáng, ăn tối trước khi đi ngủ ít nhất 2 - 3 tiếng để dạ dày kịp tiêu hóa."
-        )
-    },
     {
         'category': 'nutrition_stomach',
-        'keywords': ['ăn gì tốt cho dạ dày', 'đau dạ dày ăn gì', 'trào ngược ăn gì', 'loét dạ dày nên ăn', 'viêm dạ dày kiêng gì'],
+        'keywords': [
+            'đau dạ dày nên ăn gì', 'đau dạ dày ăn gì', 'bị đau dạ dày nên ăn gì', 'người bị đau dạ dày nên ăn gì',
+            'ăn gì tốt cho dạ dày', 'trào ngược dạ dày nên ăn gì', 'trào ngược dạ dày ăn gì', 'dạ dày nên ăn gì',
+            'dạ dày ăn gì', 'dạ dày kiêng gì', 'đau dạ dày kiêng gì', 'trào ngược ăn gì', 'loét dạ dày nên ăn',
+            'viêm dạ dày kiêng gì', 'đau bao tử nên ăn gì', 'đau bao tử ăn gì', 'trào ngược thực quản ăn gì'
+        ],
         'title': '🍲 Chế Độ Ăn Cho Người Bị Dạ Dày & Trào Ngược',
         'response': (
-            "🍲 **Thực đơn vàng cho người bị đau dạ dày & trào ngược thực quản:**\n\n"
-            "✅ **NÊN ĂN:**\n"
-            "   - **Thực phẩm bao bọc niêm mạc:** Bột yến mạch, cháo hạt sen, khoai lang, chuối chín, bí đỏ hấp.\n"
-            "   - **Đạm dễ tiêu hóa:** Cá nạc, thịt ức gà hấp/luộc, đậu phụ non, trứng gà luộc chín mềm.\n"
-            "   - **Rau củ giàu chất chống viêm:** Bắp cải (chứa nhiều Vitamin U giúp làm lành vết loét), bông cải xanh, rau mồng tơi.\n"
-            "   - **Nước nghệ mật ong ấm:** Uống vào buổi sáng giúp kháng viêm và bảo vệ lớp niêm mạc dạ dày.\n\n"
-            "❌ **CẦN KIÊNG:**\n"
-            "   - Đồ chua có tính axit cao (chanh, quất, xoài xanh, giấm, dưa muối cà muối).\n"
-            "   - Đồ cay nóng (ớt, hạt tiêu, mù tạt, tỏi sống).\n"
-            "   - Rượu bia, cà phê đậm đặc, đồ uống có ga và thuốc lá."
+            "Chào bạn! Khi dạ dày đang bị viêm hoặc có hiện tượng trào ngược axit, niêm mạc đang rất nhạy cảm nên chế độ ăn đóng vai trò then chốt giúp làm lành vết thương bạn nhé.\n\n"
+            "✅ **Những món nên ăn giúp êm bụng, lành dạ dày:**\n"
+            "- **Món bao bọc niêm mạc:** Bột yến mạch ấm, cháo hạt sen, khoai lang hấp, chuối chín (chuối tiêu chín kỹ hoặc chuối ngự), bí đỏ nấu nhừ.\n"
+            "- **Đạm dễ tiêu:** Cá nạc hấp gừng, ức gà luộc xé nhỏ, trứng hấp mềm, đậu hũ non.\n"
+            "- **Rau củ chứa vitamin U (lành vết loét):** Bắp cải luộc, bông cải xanh, canh rau ngót hoặc mồng tơi nấu thịt nạc.\n"
+            "- **Mẹo dân gian hiệu quả:** 1 ly nước ấm pha 1 thìa tinh bột nghệ + 1 thìa mật ong nguyên chất vào buổi sáng trước khi ăn 30 phút.\n\n"
+            "❌ **Cần kiêng tuyệt đối trong giai đoạn này:**\n"
+            "- Đồ chua có tính axit cao (chanh, quất, xoài xanh, giấm, dưa muối, cà muối).\n"
+            "- Đồ cay nóng (ớt, tiêu, mù tạt, tỏi sống) gây kích ứng xuất huyết niêm mạc.\n"
+            "- Bia rượu, cà phê đậm đặc, trà đặc, nước ngọt có ga và khói thuốc lá."
         )
     },
     {
         'category': 'nutrition_diabetes',
-        'keywords': ['tiểu đường ăn gì', 'đường huyết cao', 'chế độ ăn tiểu đường', 'hạ đường huyết ăn gì'],
+        'keywords': [
+            'tiểu đường nên ăn gì', 'tiểu đường ăn gì', 'người bị tiểu đường nên ăn gì',
+            'đường huyết cao nên ăn gì', 'đường huyết cao ăn gì', 'chế độ ăn tiểu đường',
+            'hạ đường huyết ăn gì', 'tiểu đường kiêng gì'
+        ],
         'title': '🩸 Dinh Dưỡng Cho Người Bị Tiểu Đường / Đường Huyết Cao',
         'response': (
-            "🩸 **Chế độ ăn kiểm soát đường huyết ổn định:**\n\n"
-            "1. **Chọn thực phẩm có chỉ số đường huyết thấp (GI < 55):**\n"
-            "   - Gạo lứt, yến mạch nguyên cám, các loại đậu (đậu đen, đậu đỏ, đậu xanh).\n"
-            "   - Các loại rau củ nhiều chất xơ hòa tan: súp lơ, cải bó xôi, mướp đắng (khổ qua), cà rốt luộc.\n\n"
-            "2. **Bổ sung chất béo tốt & Protein:**\n"
-            "   - Cá hồi, cá thu (giàu Omega-3), các loại hạt (hạnh nhân, óc chó, hạt chia).\n\n"
-            "3. **Lưu ý đặc biệt:**\n"
-            "   - Ăn rau xanh trước bữa ăn để làm chậm quá trình hấp thu glucose vào máu.\n"
-            "   - Tránh xa bánh kẹo ngọt, nước ép trái cây cô đặc, chè, sữa đặc có đường.\n"
-            "   - Chia nhỏ các bữa ăn (4 - 5 bữa/ngày) để tránh đỉnh tăng vọt đường huyết sau ăn."
+            "Chào bạn! Nguyên tắc cốt lõi trong dinh dưỡng của người tiểu đường không phải là nhịn ăn khắt khe, mà là kiểm soát chỉ số đường huyết ổn định, tránh để đường huyết tăng vọt sau ăn hay tụt dốc lúc đói.\n\n"
+            "🩸 **Nguyên tắc thực đơn kiểm soát đường huyết:**\n"
+            "1. **Chọn tinh bột có chỉ số GI thấp (< 55):** Gạo lứt, yến mạch nguyên cám, đậu đen, đậu đỏ, khoai lang luộc.\n"
+            "2. **Thứ tự ăn thông minh:** Luôn ăn một bát canh rau xanh hoặc đĩa rau luộc trước tiên -> sau đó đến phần thịt/cá (chất đạm) -> và cuối cùng mới ăn cơm/tinh bột. Cách này giúp chất xơ làm chậm quá trình hấp thu glucose vào máu cực kỳ hiệu quả.\n"
+            "3. **Tăng cường chất béo tốt:** Dầu ô liu, quả bơ, hạt óc chó, hạnh nhân, cá béo giàu Omega-3 giúp bảo vệ thành mạch tim mạch.\n"
+            "4. **Kiêng khem:** Cắt bỏ nước ngọt có ga, bánh kẹo ngọt, chè, hoa quả sấy khô ngào đường và các loại nước ép trái cây đóng hộp."
         )
     },
     {
         'category': 'nutrition_weight_loss',
-        'keywords': ['giảm cân', 'ăn kiêng', 'thực đơn giảm cân', 'giảm mỡ bụng', 'eat clean', 'nhịn ăn gián đoạn', 'keto'],
+        'keywords': ['giảm cân', 'ăn kiêng', 'thực đơn giảm cân', 'giảm mỡ bụng', 'eat clean', 'nhịn ăn gián đoạn', 'keto', 'giảm béo'],
         'title': '🏃 Bí Quyết Ăn Uống Giảm Cân & Giảm Mỡ An Toàn',
         'response': (
-            "🏃 **Nguyên tắc giảm mỡ an toàn & bền vững (Khoa học & Không hại sức khỏe):**\n\n"
-            "1. **Thâm hụt Calo nhẹ nhàng (Calorie Deficit):**\n"
-            "   - Nạp ít hơn mức cơ thể tiêu hao khoảng 300 - 500 kcal/ngày (tương đương giảm 0.5kg mỡ/tuần).\n"
-            "   - Tuyệt đối **không nhịn đói cực đoan** vì sẽ làm suy giảm cơ bắp và rối loạn trao đổi chất.\n\n"
-            "2. **Tăng cường Protein & Chất xơ:**\n"
-            "   - Protein (1.5 - 2g/kg thể trọng) giúp duy trì cơ và no lâu, giảm cảm giác thèm ăn vặt.\n"
-            "   - Ăn nhiều rau xanh, dưa chuột, cần tây, táo, bưởi để hỗ trợ hệ tiêu hóa.\n\n"
-            "3. **Uống nước trước bữa ăn:**\n"
-            "   - Uống 1 ly nước ấm trước bữa ăn 15 phút giúp kích hoạt tiêu hóa và kiểm soát khẩu phần.\n\n"
-            "4. **Cắt giảm Calo rỗng:**\n"
-            "   - Cắt bỏ trà sữa, đồ ngọt, snack, sốt mayonnaise và thức ăn nhanh chiên rán."
+            "Chào bạn! Để giảm mỡ hiệu quả và bền vững mà không bị mệt mỏi hay mất cơ bắp, bạn nên áp dụng nguyên tắc thâm hụt calo khoa học thay vì nhịn đói cực đoan nhé.\n\n"
+            "🏃 **3 Nguyên tắc giảm mỡ chuẩn y khoa:**\n"
+            "1. **Thâm hụt calo vừa phải (300 - 500 kcal/ngày):** Giúp bạn giảm khoảng 0.5kg mỡ/tuần một cách an toàn mà cơ thể vẫn tràn đầy năng lượng.\n"
+            "2. **Tăng cường Protein nạc:** Nạp đủ 1.5 - 2g protein/kg cân nặng từ ức gà, trứng luộc, cá, đậu phụ. Protein giúp giữ khối cơ, đốt nhiều calo hơn khi tiêu hóa và giữ cảm giác no lâu, chống thèm ăn vặt.\n"
+            "3. **Uống nước trước bữa ăn:** Uống 1 ly nước ấm lớn trước bữa ăn 15 phút giúp kích hoạt trao đổi chất và kiểm soát khẩu phần tốt hơn.\n"
+            "4. **Cắt giảm calo rỗng:** Nói không với trà sữa, bánh ngọt, snack, sốt béo ngậy và đồ chiên ngập dầu."
         )
     },
     {
-        'category': 'nutrition_gym',
-        'keywords': ['tập gym ăn gì', 'tăng cơ', 'whey protein', 'trước khi tập', 'sau khi tập', 'thực đơn thể hình'],
-        'title': '💪 Dinh Dưỡng Cho Người Tập Luyện Thể Thao & Tăng Cơ',
+        'category': 'nutrition_general',
+        'keywords': [
+            'chế độ ăn uống', 'dinh dưỡng khoa học', 'ăn gì tốt cho sức khỏe',
+            'thực đơn tốt cho sức khỏe', 'chế độ ăn lành mạnh', 'ăn gì khỏe',
+            'ăn gì', 'chế độ ăn', 'dinh dưỡng', 'thực đơn', 'thực phẩm tốt', 'thực phẩm nên kiêng', 'nên ăn gì', 'kiêng ăn gì', 'uống gì'
+        ],
+        'title': '🥗 Tư Vấn Dinh Dưỡng & Ăn Uống Khoa Học',
         'response': (
-            "💪 **Chiến lược dinh dưỡng tối ưu hóa cơ bắp & phục hồi năng lượng:**\n\n"
-            "1. **Trước khi tập (30 - 60 phút):**\n"
-            "   - Bổ sung tinh bột hấp thu vừa + chút protein nhẹ: 1 quả chuối + 1 lát bánh mì đen hoặc 1 ly sữa chua hạt.\n\n"
-            "2. **Sau khi tập (trong vòng 45 phút - Cửa sổ đồng hóa):**\n"
-            "   - Cung cấp Protein nạc hấp thu nhanh (ức gà, trứng luộc, whey protein) + Carb nhanh (cơm trắng, khoai lang) để phục hồi sợi cơ bị tổn thương.\n\n"
-            "3. **Bù nước & Điện giải:**\n"
-            "   - Uống từng ngụm nhỏ trong suốt buổi tập, bổ sung khoáng chất nếu ra nhiều mồ hôi."
+            "Chào bạn nhé! Một chế độ dinh dưỡng cân bằng chính là nền tảng quan trọng nhất để cơ thể dẻo dai và phòng ngừa bệnh tật.\n\n"
+            "🥗 **Nguyên tắc đĩa thức ăn vàng từ chuyên gia:**\n"
+            "1. **1/2 Đĩa thức ăn (Rau củ & Trái cây tươi):** Ưu tiên rau xanh đậm (cải bó xôi, súp lơ, mồng tơi) và quả ít ngọt (táo, ổi, bưởi, việt quất) để cung cấp chất xơ, vitamin C, E và chất chống oxy hóa.\n"
+            "2. **1/4 Đĩa thức ăn (Chất đạm chất lượng cao):** Ức gà nạc, cá biển sâu (cá hồi, cá thu giàu Omega-3), trứng gà, đậu phụ non và các loại hạt.\n"
+            "3. **1/4 Đĩa thức ăn (Tinh bột chuyển hóa chậm):** Gạo lứt, yến mạch nguyên cám, khoai lang hấp, hạt quinoa giúp giải phóng năng lượng từ từ, không làm tăng vọt đường huyết.\n\n"
+            "💧 **Thói quen vàng cần duy trì mỗi ngày:**\n"
+            "- Uống đủ 1.5 - 2 lít nước ấm, uống rải rác từng ngụm nhỏ.\n"
+            "- Giảm bớt muối và đồ ngọt đóng chai; ưu tiên cách chế biến luộc, hấp, áp chảo nhẹ.\n"
+            "- Ăn tối nhẹ bụng và cách giờ đi ngủ ít nhất 2 - 3 tiếng để dạ dày được nghỉ ngơi."
+        )
+    },
+    {
+        'category': 'sleep_wellness',
+        'keywords': ['mất ngủ', 'khó ngủ', 'ngủ ngon', 'ngủ sâu giấc', 'mệt mỏi khi ngủ dậy', 'thức khuya'],
+        'title': '🌙 Bí Quyết Cải Thiện Giấc Ngủ Sâu & Trị Mất Ngủ',
+        'response': (
+            "Chào bạn! Giấc ngủ sâu là liều thuốc kỳ diệu nhất để não bộ và các tế bào cơ thể tự sửa chữa và phục hồi sau ngày dài.\n\n"
+            "🌙 **Cách thiết lập giấc ngủ ngon tự nhiên:**\n"
+            "1. **Quy tắc vệ sinh giấc ngủ (Sleep Hygiene):**\n"
+            "   - Đi ngủ và thức dậy vào một khung giờ cố định mỗi ngày.\n"
+            "   - Tắt điện thoại, máy tính ít nhất 45 phút trước khi ngủ (ánh sáng xanh ức chế hormone gây ngủ Melatonin).\n"
+            "   - Phòng ngủ nên tối hoàn toàn, yên tĩnh và nhiệt độ mát mẻ (khoảng 24 - 26°C).\n"
+            "2. **Thức uống hỗ trợ giấc ngủ:** Uống 1 tách trà hoa cúc ấm, trà tâm sen hoặc 1 ly sữa hạt ấm trước khi lên giường 30 phút.\n"
+            "3. **Thư giãn cơ thể:** Ngâm chân nước ấm với chút gừng tươi và muối hạt trong 15 phút, kết hợp tập thở nhịp 4-7-8 giúp xoa dịu hệ thần kinh rất nhanh."
         )
     },
     {
@@ -98,207 +226,384 @@ HEALTH_KNOWLEDGE_BASE = [
         'keywords': ['uống nước', 'bao nhiêu lít nước', 'uống nước đúng cách', 'uống trà', 'uống nước ấm'],
         'title': '💧 Hướng Dẫn Uống Nước Đúng Cách Cho Cơ Thể Khỏe Mạnh',
         'response': (
-            "💧 **Công thức và thời điểm vàng uống nước cho cơ thể:**\n\n"
-            "1. **Lượng nước cần thiết:**\n"
-            "   - Công thức chuẩn: `Cân nặng (kg) x 40ml` (Ví dụ: 50kg cần khoảng 2.0 lít nước/ngày).\n\n"
-            "2. **4 Thời điểm vàng để uống nước:**\n"
-            "   - ⏰ **Ngay sau khi thức dậy (6:00 - 7:00):** 1 ly nước ấm giúp thanh lọc đường ruột và đánh thức các cơ quan.\n"
-            "   - ⏰ **Trước bữa ăn 30 phút:** Giúp dịch vị tiêu hóa tiết ra sẵn sàng.\n"
-            "   - ⏰ **Trước khi tắm:** Giúp cân bằng huyết áp và điều hòa thân nhiệt.\n"
-            "   - ⏰ **Trước khi đi ngủ 30 - 45 phút:** 1 ngụm nước nhỏ giúp ngăn ngừa nguy cơ đông máu và tai biến ban đêm.\n\n"
-            "3. **Lưu ý:** Uống từng ngụm nhỏ, ngồi uống thay vì đứng, hạn chế uống nhiều nước lạnh buốt."
-        )
-    },
-
-    # --- SỨC KHỎE ĐỜI SỐNG & LỐI SỐNG LÀNH MẠNH ---
-    {
-        'category': 'sleep_wellness',
-        'keywords': ['mất ngủ', 'khó ngủ', 'ngủ ngon', 'ngủ sâu giấc', 'mệt mỏi khi ngủ dậy', 'thức khuya'],
-        'title': '🌙 Bí Quyết Cải Thiện Giấc Ngủ Sâu & Trị Mất Ngủ',
-        'response': (
-            "🌙 **Phương pháp khoa học để có giấc ngủ sâu và tái tạo năng lượng:**\n\n"
-            "1. **Quy tắc vệ sinh giấc ngủ (Sleep Hygiene):**\n"
-            "   - Đi ngủ và thức dậy vào một khung giờ cố định mỗi ngày (kể cả cuối tuần).\n"
-            "   - Tắt ánh sáng xanh (điện thoại, máy tính, tivi) ít nhất 45 phút trước khi lên giường.\n"
-            "   - Giữ phòng ngủ thoáng mát, nhiệt độ lý tưởng khoảng 24 - 26°C và tối hoàn toàn.\n\n"
-            "2. **Đồ uống & Thực phẩm hỗ trợ giấc ngủ:**\n"
-            "   - Uống 1 tách trà hoa cúc, trà tim sen hoặc 1 ly sữa ấm trước khi ngủ.\n"
-            "   - Hạt sen, chuối, hạnh nhân chứa nhiều Melatonin và Magie tự nhiên giúp thư giãn thần kinh.\n\n"
-            "3. **Thư giãn trước khi ngủ:**\n"
-            "   - Ngâm chân bằng nước ấm với chút gừng/muối 15 phút, tập thở sâu theo nhịp 4-7-8."
-        )
-    },
-    {
-        'category': 'stress_mental',
-        'keywords': ['stress', 'căng thẳng', 'lo âu', 'áp lực', 'mệt mỏi tinh thần', 'trầm cảm'],
-        'title': '🌿 Giải Tỏa Căng Thẳng & Cân Bằng Tâm Trí',
-        'response': (
-            "🌿 **Cách giải tỏa căng thẳng và chăm sóc sức khỏe tinh thần:**\n\n"
-            "1. **Kỹ thuật thở sâu 4-7-8:** Hít vào bằng mũi trong 4 giây, giữ hơi 7 giây, thở ra từ từ bằng miệng trong 8 giây (lặp lại 4 lần).\n"
-            "2. **Vận động nhẹ giải phóng Endorphin:** Đi bộ nhanh 20 phút ngoài trời hoặc tập Yoga giúp xoa dịu hệ thần kinh trung ương.\n"
-            "3. **Giảm kích thích thần kinh:** Giảm bớt trà đậm, cà phê và các chất kích thích; tăng cường vitamin nhóm B và Magie.\n"
-            "4. **Chia sẻ và giải bày:** Tâm sự với người thân, bạn bè hoặc tìm đến chuyên gia tâm lý khi cảm xúc quá tải."
-        )
-    },
-    {
-        'category': 'office_ergonomics',
-        'keywords': ['đau mỏi vai gáy', 'đau lưng văn phòng', 'ngồi nhiều', 'mỏi cổ', 'mỏi mắt máy tính'],
-        'title': '💻 Chăm Sóc Sức Khỏe Cho Dân Văn Phòng',
-        'response': (
-            "💻 **Bí quyết bảo vệ cột sống và đôi mắt cho người ngồi máy tính nhiều:**\n\n"
-            "1. **Quy tắc 20-20-20 cho mắt:** Cứ sau 20 phút nhìn màn hình, hãy nhìn vào một vật cách xa 20 feet (khoảng 6 mét) trong 20 giây.\n"
-            "2. **Tư thế ngồi chuẩn y khoa:**\n"
-            "   - Mắt ngang tầm với cạnh trên của màn hình máy tính.\n"
-            "   - Lưng thẳng tựa vào đệm tựa, đùi song song mặt đất, bàn chân đặt phẳng trên sàn.\n"
-            "   - Khuỷu tay gập góc 90 độ khi gõ bàn phím.\n"
-            "3. **Đứng dậy vận động:** Cứ mỗi 45 - 60 phút, đứng lên vươn vai, xoay khớp cổ và đi lấy nước để máu lưu thông đều."
-        )
-    },
-
-    # --- SƠ CỨU & CHĂM SÓC BAN ĐẦU TẠI NHÀ ---
-    {
-        'category': 'fever_care',
-        'keywords': ['hạ sốt', 'cách hạ sốt', 'sốt cao', 'uống thuốc hạ sốt', 'chườm ấm', 'chườm lạnh'],
-        'title': '🌡️ Hướng Dẫn Hạ Sốt Nhanh & An Toàn Tại Nhà',
-        'response': (
-            "🌡️ **Quy trình xử lý khi bị sốt an toàn theo khuyến cáo y khoa:**\n\n"
-            "1. **Chăm sóc cơ thể:**\n"
-            "   - Mặc quần áo mỏng, rộng rãi, thoáng mát, phòng ốc thông thoáng.\n"
-            "   - Dùng khăn mềm thấm **nước ấm** (nhiệt độ nước thấp hơn thân nhiệt 2 độ) để lau chườm tại trán, 2 nách và 2 bẹn. *(Tuyệt đối không chườm đá lạnh vì gây co mạch)*.\n\n"
-            "2. **Bù nước & Điện giải:**\n"
-            "   - Uống nhiều nước lọc, nước oresol (pha đúng tỉ lệ hướng dẫn), nước cam, nước dừa.\n\n"
-            "3. **Dùng thuốc hạ sốt (khi sốt >= 38.5°C):**\n"
-            "   - Paracetamol liều 10 - 15mg/kg cân nặng mỗi lần, cách nhau 4 - 6 tiếng (không quá 4 lần/ngày).\n\n"
-            "⚠️ **Cần đến bệnh viện ngay nếu:** Sốt cao trên 39.5°C không hạ, co giật, khó thở, nôn ói liên tục hoặc phát ban li bì."
-        )
-    },
-    {
-        'category': 'burn_care',
-        'keywords': ['bị bỏng', 'sơ cứu bỏng', 'bỏng nước sôi', 'bỏng bô xe', 'bỏng dầu mỡ'],
-        'title': '🔥 Sơ Cứu Bỏng Đúng Cách (Không Để Lại Sẹo)',
-        'response': (
-            "🔥 **5 Bước sơ cứu bỏng chuẩn y khoa ngay tức thì:**\n\n"
-            "1. **Làm mát vết bỏng lập tức:** Ngâm hoặc xả nhẹ vết bỏng dưới vòi **nước sạch mát** (15 - 20°C) liên tục trong 15 - 20 phút để hạ nhiệt mô tế bào.\n"
-            "2. **Tháo bỏ trang sức, đồ chật** quanh vùng bỏng trước khi bị sưng phù nề.\n"
-            "3. **Bảo vệ vết bỏng:** Che phủ nhẹ nhàng bằng gạc y tế vô trùng hoặc vải sạch.\n"
-            "4. ❌ **TUYỆT ĐỐI KHÔNG:** Bôi kem đánh răng, nước mắm, mỡ trăn, trứng sống hay chườm đá lạnh vì sẽ gây nhiễm trùng hoại tử!\n"
-            "5. **Đến cơ sở y tế:** Nếu vết bỏng diện tích rộng, có bóng nước to hoặc ở các vị trí nhạy cảm (mặt, khớp, bộ phận sinh dục)."
+            "Chào bạn! Nước chiếm hơn 70% cơ thể chúng ta, nhưng uống thế nào cho đúng và hấp thu tối đa thì không phải ai cũng biết đâu nhé.\n\n"
+            "💧 **Công thức lượng nước chuẩn mỗi ngày:** `Cân nặng (kg) x 40ml` (Ví dụ bạn 55kg thì cần khoảng 2.2 lít nước/ngày).\n\n"
+            "⏰ **4 Khung giờ vàng để uống nước:**\n"
+            "1. **Ngay sau khi thức dậy:** 1 ly nước ấm khoảng 300ml giúp thanh lọc đường tiêu hóa và đánh thức các cơ quan.\n"
+            "2. **Trước bữa ăn 30 phút:** 1 ly nước nhỏ giúp chuẩn bị dịch vị tiêu hóa.\n"
+            "3. **Trước khi đi tắm:** 1 ly nước ấm giúp ổn định huyết áp và điều hòa nhiệt độ cơ thể.\n"
+            "4. **Trước khi ngủ 30 - 45 phút:** 1 ngụm nước ấm nhỏ giúp phòng ngừa cô đặc máu ban đêm.\n\n"
+            "👉 *Mẹo nhỏ: Hãy ngồi uống từng ngụm nhỏ thay vì đứng uống ừng ực cả cốc lớn bạn nhé!*"
         )
     }
 ]
 
-# Bộ quy tắc ánh xạ Triệu chứng -> Chuyên khoa & Lời khuyên y tế lâm sàng
-SYMPTOM_KNOWLEDGE_BASE = {
-    'thần kinh': {
-        'keywords': ['đau đầu', 'nhức đầu', 'chóng mặt', 'hoa mắt', 'mất ngủ', 'tiền đình', 'đột quỵ', 'tê tay chân', 'co giật', 'nửa đầu', 'tai biến'],
-        'specialty_name': 'Thần kinh',
-        'advice': 'Triệu chứng đau đầu, chóng mặt hoặc mất ngủ có thể xuất phát từ căng thẳng (stress), thiếu máu não, đau nửa đầu Migraine hoặc rối loạn tiền đình. Bạn nên nghỉ ngơi ở nơi thoáng mát, uống đủ nước và tránh làm việc quá sức trước màn hình.',
-        'urgent': 'Nếu có dấu hiệu méo miệng, yếu liệt nửa người, nói ngọng hoặc đau đầu dữ dội đột ngột, vui lòng đến ngay cơ sở cấp cứu gần nhất!'
-    },
-    'tim mạch': {
-        'keywords': ['đau ngực', 'tức ngực', 'khó thở', 'hồi hộp', 'tim đập nhanh', 'huyết áp cao', 'tăng huyết áp', 'hạ huyết áp', 'nhói tim', 'mạch vành'],
-        'specialty_name': 'Tim mạch',
-        'advice': 'Triệu chứng đau tức ngực hoặc hồi hộp đánh trống ngực cần được thăm khám cẩn thận để tầm soát bệnh lý mạch vành, rối loạn nhịp tim hoặc huyết áp. Bạn nên hạn chế gắng sức và giữ tinh thần thư giãn.',
-        'urgent': 'Cơn đau thắt ngực lan ra cánh tay trái, cổ hoặc hàm kéo dài trên 15 phút là dấu hiệu cảnh báo khẩn cấp!'
+
+# ================= 3. BỘ XỬ LÝ CÁC HOÀN CẢNH ĐỜI SỐNG THỰC TẾ =================
+
+def handle_alcohol_throat_context(msg_clean):
+    """
+    Kịch bản chuyên sâu: Tối uống bia/rượu/nhậu -> Sáng dậy rát họng, khô họng, khàn tiếng, nuốt đau.
+    Đây chính là tình huống người dùng đặc biệt yêu cầu: nch tự nhiên như người với người!
+    """
+    has_alcohol = any(w in msg_clean for w in [
+        'bia', 'rượu', 'ruou', 'nhậu', 'nhau', 'ún bia', 'un bia', 'uống bia', 'uong bia',
+        'uống rượu', 'uong ruou', 'chè chén', 'say', 'say xỉn', 'bàn nhậu', 'chầu bia', 'quá chén'
+    ])
+    has_throat = any(w in msg_clean for w in [
+        'rát họng', 'rat hong', 'đau họng', 'dau hong', 'rát cổ', 'rat co', 'khô họng', 'kho hong',
+        'khô cổ', 'kho co', 'khàn giọng', 'khan giong', 'khàn tiếng', 'khan tieng', 'mất giọng',
+        'nuốt đau', 'nuot dau', 'khé cổ', 'khe co', 'rát', 'đắng họng', 'đắng miệng', 'chua miệng'
+    ])
+
+    if has_alcohol and has_throat:
+        reply = (
+            "Chào bạn nhé! Nghe bạn kể là mình hiểu ngay cảm giác khó chịu này rồi. Tình trạng tối hôm trước uống bia rượu (đặc biệt là bia ướp lạnh, uống nhiều đá) rồi sáng ngủ dậy thấy cổ họng khô khốc, rát buốt, nuốt nước bọt thấy cộm đau là phản ứng cực kỳ phổ biến luôn bạn ạ!\n\n"
+            "🩺 **Tại sao tối uống bia mà sáng dậy lại bị rát họng?**\n"
+            "Thực ra có 4 nguyên nhân chính kết hợp lại:\n"
+            "1. 💧 **Cơ thể bị mất nước nghiêm trọng qua đêm:** Cồn trong bia là chất lợi tiểu mạnh, khiến bạn đi tiểu nhiều và rút bớt nước trong các mô tế bào. Khi ngủ qua đêm suốt 6 - 8 tiếng không uống nước lọc, niêm mạc vùng hầu họng bị khô khốc, mất đi lớp màng nhầy ẩm tự nhiên vốn có để bảo vệ họng.\n"
+            "2. 🧊 **Nhiệt độ bia quá lạnh:** Uống nhiều bia lạnh hoặc bia kèm đá làm co thắt đột ngột các vi mạch máu nuôi dưỡng niêm mạc họng, làm giảm tuần hoàn máu và suy giảm tạm thời hàng rào miễn dịch tại chỗ của đường hô hấp trên.\n"
+            "3. 🗣️ **Nói chuyện to, cười đùa, hò hét khi nhậu:** Trong các buổi tiệc nhậu vui vẻ và ồn ào, chúng ta thường có xu hướng nói lớn tiếng, cười đùa hoặc hò hét cụng ly liên tục. Điều này khiến dây thanh quản và niêm mạc họng bị cọ xát cơ học gây phù nề, khàn giọng và đau rát.\n"
+            "4. 🔥 **Trào ngược axit dạ dày ban đêm (Acid Reflux):** Cồn làm giãn cơ thắt thực quản dưới và kích thích dạ dày tiết nhiều axit. Khi bạn đi ngủ trong trạng thái bụng đầy bia và thức ăn, axit dạ dày rất dễ trào ngược lên tận vòm họng gây bỏng rát niêm mạc, sáng dậy thường kèm cảm giác đắng ngắt hoặc chua ở cuống họng.\n\n"
+            "---\n\n"
+            "👉 **Những việc bạn nên làm ngay sáng nay để dịu họng tức thì:**\n"
+            "- 💧 **Uống ngay 1 cốc nước ấm lớn (khoảng 350 - 400ml):** Uống từng ngụm nhỏ từ từ để cấp nước bù lại cho cơ thể và làm ẩm lại niêm mạc cổ họng đang bị khô rát.\n"
+            "- 🍯 **Nước ấm pha mật ong + vài giọt chanh hoặc gừng:** Mật ong có tính kháng khuẩn tự nhiên, tạo lớp màng bọc làm dịu vết xước niêm mạc họng rất êm; vài lát gừng tươi giúp làm ấm họng, kích thích lưu thông máu và hỗ trợ tiêu hóa.\n"
+            "- 🧂 **Súc họng sâu bằng nước muối sinh lý ấm (0.9%):** Ngửa cổ khò sâu xuống họng 30 giây rồi nhổ ra, thực hiện 3 - 4 lần trong ngày. Nước muối giúp sát trùng, giảm sưng nề và rửa trôi axit trào ngược đọng ở cuống họng.\n"
+            "- 🍲 **Bữa sáng nhẹ nhàng, mềm ấm:** Bạn nên ăn một tô cháo hành tía tô nóng, súp gà hoặc phở ấm để làm ấm họng và bồi hoàn năng lượng; tránh các món chiên xào nhiều dầu mỡ hay đồ cay nóng.\n"
+            "- 🚫 **Những điều hôm nay cần tránh:** Tuyệt đối không tiếp tục uống nước đá lạnh, không hút thuốc lá, kiêng cà phê đặc và hạn chế nói lớn tiếng để họng có thời gian hồi phục.\n\n"
+            "---\n\n"
+            "⚠️ **Dấu hiệu bạn cần lưu ý:**\n"
+            "Thông thường nếu chỉ do bia lạnh và khô rát cơ học, họng sẽ êm dịu dần sau 1 - 2 ngày khi bạn nghỉ ngơi và bù đủ nước. Tuy nhiên, nếu bạn xuất hiện thêm các dấu hiệu sau thì có thể vi khuẩn cơ hội đã xâm nhập gây viêm nhiễm:\n"
+            "- Sốt cao trên 38.5°C, người ớn lạnh, đau mỏi toàn thân.\n"
+            "- Nuốt đau nhói buốt lan lên mang tai, nuốt nghẹn khó thở.\n"
+            "- Amidan hai bên sưng to đỏ, có chấm mủ trắng hoặc nổi hạch đau ở góc hàm.\n"
+            "- Đau rát kéo dài quá 3 ngày không có dấu hiệu thuyên giảm.\n\n"
+            "---\n\n"
+            "💬 *Hiện tại bạn chỉ thấy khô rát nhẹ hay có bị sốt, khàn tiếng hoặc nuốt đau buốt nhiều không? Bạn cứ chia sẻ thêm với mình nhé, mình ở đây để đồng hành cùng bạn!*"
+        )
+        return {
+            'reply': reply,
+            'stage': 'lifestyle_alcohol_throat',
+            'suggested_specialty': 'Tai Mũi Họng',
+            'quick_replies': [
+                'Chỉ rát nhẹ, không sốt',
+                'Có sốt và nuốt đau nhiều',
+                'Uống thuốc gì cho đỡ rát họng?',
+                'Tôi muốn đặt lịch khám Tai Mũi Họng'
+            ]
+        }
+    return None
+
+
+def handle_alcohol_headache_hangover(msg_clean):
+    """
+    Kịch bản: Uống bia/rượu -> Say, đau đầu, buồn nôn, mệt mỏi, giải rượu, say nguội.
+    """
+    has_alcohol = any(w in msg_clean for w in [
+        'bia', 'rượu', 'ruou', 'nhậu', 'nhau', 'uống bia', 'uong bia', 'uống rượu',
+        'say', 'say rượu', 'say bia', 'say xỉn', 'giải rượu', 'giai ruou', 'say nguội'
+    ])
+    has_hangover = any(w in msg_clean for w in [
+        'đau đầu', 'dau dau', 'nhức đầu', 'nhuc dau', 'buồn nôn', 'buon non', 'nôn nao',
+        'non nao', 'chóng mặt', 'chong mat', 'oải người', 'mệt mỏi', 'met moi', 'cồn cào', 'nóng ruột'
+    ])
+
+    if has_alcohol and has_hangover:
+        reply = (
+            "Chào bạn! Cảm giác đầu óc bưng bưng, nôn nao và mệt mỏi rã rời sau một đêm quá chén quả thực rất khó chịu...\n\n"
+            "🩺 **Vì sao bạn bị đau đầu và mệt mỏi sau khi uống rượu bia?**\n"
+            "- Khi gan phân giải cồn, nó tạo ra một hợp chất trung gian gọi là **Acetaldehyde** - chất này có độc tính cao gấp nhiều lần cồn, gây giãn mạch máu não (tạo ra cơn đau đầu bưng bưng) và kích ứng trung tâm buồn nôn ở não bộ.\n"
+            "- Ngoài ra, cơ thể bị mất nước và cạn kiệt các chất điện giải (Kali, Natri) kèm hạ đường huyết nhẹ sau một giấc ngủ dài.\n\n"
+            "---\n\n"
+            "👉 **Các bước giúp bạn hồi phục và tỉnh táo nhanh nhất:**\n"
+            "1. 🥥 **Bù nước và khoáng chất:** Uống ngay 1 ly nước dừa tươi, nước chanh muối ấm hoặc 1 gói Oresol pha đúng tỉ lệ. Đây là cách giải rượu và giảm đau đầu tự nhiên hiệu quả nhất.\n"
+            "2. 🫚 **Trà gừng mật ong ấm:** Vài lát gừng tươi đập dập hãm nước sôi cùng 1 thìa mật ong giúp làm ấm bụng, chống co thắt dạ dày và dứt nhanh cơn buồn nôn.\n"
+            "3. 🥣 **Ăn một bát cháo hành tía tô hoặc cháo đậu xanh nóng:** Giúp cung cấp lại lượng tinh bột làm ấm dạ dày và hỗ trợ gan thải độc tố cồn ra ngoài.\n"
+            "4. 🚫 **LƯU Ý CỰC KỲ QUAN TRỌNG:** Tuyệt đối **KHÔNG tự ý uống thuốc giảm đau Paracetamol (Panadol)** ngay lúc này để trị đau đầu do rượu bia! Khi gan đang phải quá tải lọc cồn, Paracetamol sẽ kết hợp gây tổn thương gan cấp tính nguy hiểm.\n\n"
+            "💬 *Hiện tại bạn có bị nôn ói nhiều không hay chỉ đau đầu và mệt mỏi? Bạn hãy uống nhiều nước ấm và nghỉ ngơi thêm ở phòng thoáng khí nhé!*"
+        )
+        return {
+            'reply': reply,
+            'stage': 'general',
+            'suggested_specialty': 'Nội tổng quát',
+            'quick_replies': [
+                'Uống nước gì giải rượu nhanh?',
+                'Ăn gì cho đỡ cồn cào ruột?',
+                'Tôi muốn nghỉ ngơi thêm'
+            ]
+        }
+    return None
+
+
+def handle_cold_air_conditioning(msg_clean):
+    """
+    Kịch bản: Nằm điều hòa / Máy lạnh / Gió lạnh -> Rát họng, ngạt mũi, cảm lạnh.
+    """
+    has_cold_trigger = any(w in msg_clean for w in [
+        'điều hòa', 'dieu hoa', 'máy lạnh', 'may lanh', 'quạt thốc', 'nhiễm lạnh',
+        'trở trời', 'mắc mưa', 'dầm mưa', 'trời lạnh'
+    ])
+    has_cold_symptom = any(w in msg_clean for w in [
+        'rát họng', 'rat hong', 'đau họng', 'dau hong', 'nghẹt mũi', 'nghat mui',
+        'ngạt mũi', 'sổ mũi', 'so mui', 'chảy nước mũi', 'hắt hơi', 'hat hoi'
+    ])
+
+    if has_cold_trigger and has_cold_symptom:
+        reply = (
+            "Chào bạn nhé! Ngủ trong phòng máy lạnh hoặc điều hòa để nhiệt độ quá thấp rất thường xuyên gây ra tình trạng khô rát họng và nghẹt mũi vào sáng hôm sau.\n\n"
+            "🩺 **Nguyên nhân chính:**\n"
+            "- Máy lạnh hút ẩm rất mạnh, làm độ ẩm không khí trong phòng tụt xuống dưới 40% (mức lý tưởng là 55 - 65%). Không khí khô và lạnh khiến lớp dịch nhầy bảo vệ niêm mạc mũi họng bị bốc hơi hết, làm họng khô rát và kích hoạt phản xạ cuốn mũi phình to gây nghẹt thở.\n\n"
+            "👉 **Cách khắc phục ngay hôm nay:**\n"
+            "1. **Uống ngay một cốc nước ấm:** Cấp ẩm tức thì cho niêm mạc họng.\n"
+            "2. **Vệ sinh mũi họng bằng nước muối sinh lý 0.9%:** Xịt rửa mũi và súc họng sâu để làm sạch chất nhầy và giữ ấm niêm mạc.\n"
+            "3. **Điều chỉnh lại điều hòa cho những đêm tới:**\n"
+            "   - Cài đặt nhiệt độ từ **26 - 28°C** (tránh để dưới 24°C).\n"
+            "   - Đặt thêm một chậu nước nhỏ hoặc bật máy phun sương tạo ẩm trong phòng.\n"
+            "   - Tránh để luồng gió điều hòa hoặc quạt phả thẳng trực diện vào vùng mặt và cổ khi ngủ.\n\n"
+            "💬 *Bạn có bị sổ mũi nhiều hay kèm theo sốt không? Bạn chia sẻ thêm nhé!*"
+        )
+        return {
+            'reply': reply,
+            'stage': 'general',
+            'suggested_specialty': 'Tai Mũi Họng',
+            'quick_replies': [
+                'Chỉ bị nghẹt mũi nhẹ',
+                'Có sốt và ho nữa',
+                'Tôi muốn đặt lịch khám Tai Mũi Họng'
+            ]
+        }
+    return None
+
+
+def handle_late_night_screen_strain(msg_clean):
+    """
+    Kịch bản: Thức khuya / Làm việc máy tính nhiều -> Đau đầu, mỏi mắt, choáng váng.
+    """
+    has_strain = any(w in msg_clean for w in [
+        'thức khuya', 'thuc khuya', 'ngủ muộn', 'ngu muon', 'thiếu ngủ', 'thieu ngu',
+        'máy tính', 'may tinh', 'nhìn màn hình', 'căng thẳng', 'stress', 'cày đêm'
+    ])
+    has_symptom = any(w in msg_clean for w in [
+        'đau đầu', 'dau dau', 'mỏi mắt', 'moi mat', 'nhức mắt', 'chóng mặt', 'chong mat', 'choáng váng', 'uể oải'
+    ])
+
+    if has_strain and has_symptom:
+        reply = (
+            "Chào bạn! Cơ thể và hệ thần kinh sau một đêm thức khuya hoặc dán mắt vào màn hình máy tính quá lâu thường bị suy giảm tưới máu não và căng cứng các cơ vùng cổ vai gáy.\n\n"
+            "🩺 **Lời khuyên giúp bạn giải tỏa căng thẳng và phục hồi:**\n"
+            "1. 👁️ **Thư giãn đôi mắt (Quy tắc 20-20-20):** Cứ sau 20 phút nhìn màn hình, hãy nhìn xa ra khoảng 6 mét trong 20 giây; có thể nhỏ thêm nước mắt nhân tạo để chống khô mắt.\n"
+            "2. 💆 **Massage giải tỏa cơ:** Dùng các đầu ngón tay xoa bóp nhẹ nhàng hai bên thái dương, ấn nhẹ huyệt phong trì (sau gáy) và vươn vai thư giãn cột sống cổ.\n"
+            "3. 💧 **Bù nước và dinh dưỡng:** Uống 1 ly nước ấm lớn, có thể uống một tách trà hoa cúc hoặc nước ép hoa quả giàu vitamin C để tăng cường tỉnh táo.\n"
+            "4. 😴 **Chợp mắt ngắn buổi trưa:** Dành khoảng 15 - 20 phút ngủ trưa để não bộ được tái tạo năng lượng, tránh ngủ quá dài buổi trưa gây mệt mỏi thêm.\n\n"
+            "💬 *Bạn bị đau âm ỉ toàn đầu hay đau nhói nửa đầu? Bạn chia sẻ thêm để mình hỗ trợ nhé!*"
+        )
+        return {
+            'reply': reply,
+            'stage': 'general',
+            'suggested_specialty': 'Thần kinh',
+            'quick_replies': [
+                'Đau âm ỉ hai bên thái dương',
+                'Mỏi mắt và nhức vai gáy',
+                'Cách ngủ ngon tối nay'
+            ]
+        }
+    return None
+
+
+def handle_followup_turns(msg_clean, session):
+    """
+    Xử lý các lượt hội thoại nối tiếp tự nhiên khi người dùng phản hồi lại câu hỏi trước của bot.
+    """
+    # 1. Người dùng phản hồi là chỉ rát nhẹ, không sốt, đã đỡ
+    mild_keywords = [
+        'chỉ rát nhẹ', 'chi rat nhe', 'rát nhẹ', 'rat nhe', 'hơi rát', 'hoi rat',
+        'không sốt', 'khong sot', 'đỡ hơn rồi', 'do hon roi', 'đã đỡ', 'bớt rồi',
+        'không đau lắm', 'chỉ bị khô cổ', 'chỉ bị khàn tiếng nhẹ', 'bình thường thôi'
+    ]
+    if any(k in msg_clean for k in mild_keywords):
+        reply = (
+            "Nghe bạn nói chỉ bị rát nhẹ và không sốt là mình an tâm nhiều rồi nè! 👍\n\n"
+            "Như vậy khả năng rất cao là niêm mạc họng của bạn chỉ bị khô rát và kích ứng cơ học do cồn với nước đá lạnh thôi, chưa có dấu hiệu nhiễm khuẩn đâu bạn ạ.\n\n"
+            "👉 **Kế hoạch chăm sóc hôm nay để họng nhanh êm:**\n"
+            "1. Tiếp tục nhấp từng ngụm nước ấm rải rác trong ngày (cứ 20 - 30 phút uống một ngụm nhỏ).\n"
+            "2. Duy trì uống 1 - 2 tách nước ấm mật ong chanh/gừng và súc họng bằng nước muối sinh lý ấm sau mỗi bữa ăn.\n"
+            "3. Nếu ở trong phòng điều hòa, bạn nhớ chỉnh nhiệt độ từ 26°C trở lên và đặt thêm một cốc nước gần chỗ ngồi để giữ độ ẩm nhé.\n"
+            "4. Trưa và tối nay ưu tiên các món canh ấm, cháo hoặc súp mềm, dễ nuốt để họng không phải cọ xát nhiều.\n\n"
+            "Chỉ cần chăm sóc đúng cách vậy thì tầm chiều tối nay hoặc sang ngày mai là cổ họng sẽ êm dịu và hết rát hoàn toàn thôi bạn nha! Nếu có gì băn khoăn thêm, bạn cứ thoải mái nhắn cho mình bất cứ lúc nào nhé! Chúc bạn một ngày thật khỏe khoắn! 🌿"
+        )
+        return {
+            'reply': reply,
+            'stage': 'general',
+            'quick_replies': [
+                'Ăn gì tốt cho họng hôm nay?',
+                'Uống nước thế nào đúng cách',
+                'Cảm ơn bạn nhiều nhé'
+            ]
+        }
+
+    # 2. Người dùng phản hồi có sốt, nuốt đau buốt nhiều, bệnh nặng lên
+    severe_keywords = [
+        'có sốt', 'co sot', 'bị sốt', 'bi sot', 'sốt cao', 'sot cao', 'sốt 38', 'sốt 39',
+        'nuốt đau buốt', 'nuot dau buot', 'đau buốt lên tai', 'đau nhiều', 'rất đau',
+        'nuốt nghẹn', 'rát nhiều', 'có đờm xanh', 'đờm vàng', 'sốt rét'
+    ]
+    if any(k in msg_clean for k in severe_keywords):
+        reply = (
+            "Ồ, nếu đã xuất hiện sốt và nuốt đau buốt nhiều như vậy thì bạn cần hết sức lưu ý rồi nhé! ⚠️\n\n"
+            "Dấu hiệu này cho thấy vùng hầu họng của bạn không chỉ đơn thuần là khô rát do bia lạnh nữa, mà khả năng vi khuẩn hoặc virus cơ hội đã xâm nhập gây **viêm họng cấp** hoặc **viêm amidan cấp** sau khi sức đề kháng bị suy giảm tạm thời.\n\n"
+            "🩺 **Những việc cần làm ngay lúc này:**\n"
+            "1. 🌡️ **Kiểm tra nhiệt độ cơ thể:** Nếu sốt từ 38.5°C trở lên, bạn có thể uống 1 viên Paracetamol 500mg để hạ sốt và giảm đau buốt (cách nhau 4 - 6 tiếng nếu còn sốt). Lưu ý uống cách xa bữa bia rượu tối qua ít nhất 6 tiếng để bảo vệ gan.\n"
+            "2. 💧 **Bù nước liên tục:** Uống nhiều nước ấm từng ngụm nhỏ, có thể uống thêm nước oresol hoặc nước cam ấm để bổ sung vitamin C.\n"
+            "3. 🏥 **Thăm khám chuyên khoa Tai Mũi Họng:** Vì tình trạng đã có sốt và nuốt đau buốt, bạn rất nên đến cơ sở y tế để bác sĩ nội soi vòm họng và kê đơn thuốc kháng viêm/kháng sinh phù hợp, tránh để viêm nhiễm lan xuống phế quản hoặc tạo ổ áp-xe quanh amidan.\n\n"
+            "---\n\n"
+            "👉 **Bạn có muốn mình hỗ trợ tìm bệnh viện và đặt lịch khám với Bác sĩ chuyên khoa Tai Mũi Họng gần bạn nhất không?**"
+        )
+        return {
+            'reply': reply,
+            'stage': 'ask_booking_confirmation',
+            'suggested_specialty': 'Tai Mũi Họng',
+            'quick_replies': [
+                'Có, tôi muốn đặt lịch khám',
+                'Khám ở Đà Nẵng',
+                'Khám ở Hà Nội',
+                'Khám ở TP. Hồ Chí Minh',
+                'Chưa, tôi muốn hỏi thêm'
+            ]
+        }
+
+    # 3. Người dùng hỏi về thuốc uống tại nhà
+    med_keywords = [
+        'uống thuốc gì', 'uong thuoc gi', 'mua thuốc gì', 'mua thuoc gi',
+        'thuốc gì', 'thuoc gi', 'uống thuốc nào', 'uống kháng sinh không', 'dùng thuốc gì'
+    ]
+    if any(k in msg_clean for k in med_keywords):
+        reply = (
+            "Về việc dùng thuốc khi bị rát họng, mình xin chia sẻ với bạn những hướng dẫn y khoa an toàn và chuẩn xác này nhé:\n\n"
+            "✅ **1. Các giải pháp thảo dược & không kê đơn an toàn có thể dùng ngay:**\n"
+            "- 🍬 **Viên ngậm thảo dược:** Các loại viên ngậm chứa tinh dầu bạc hà, khuynh diệp, cam thảo, chanh mật ong hoặc keo ong (như Strepsils, Prospan, viên ngậm quất mật ong...) giúp làm dịu cảm giác đau rát, sát trùng nhẹ và kích thích tiết nước bọt giữ ẩm cho niêm mạc họng.\n"
+            "- 🌿 **Xịt họng keo ong / thảo dược:** Xịt trực tiếp 2 - 3 nhát vào sâu vòm họng, ngày 3 - 4 lần. Keo ong là kháng sinh tự nhiên giúp kháng khuẩn và làm lành niêm mạc họng rất hiệu quả.\n"
+            "- 🧂 **Dung dịch súc họng sát khuẩn:** Nước muối sinh lý ấm 0.9% hoặc nước súc họng chuyên dụng chứa Povidone-iodine (như Betadine súc họng 1%) dùng 2 - 3 lần/ngày.\n\n"
+            "💊 **2. Thuốc giảm đau hạ sốt (khi cần thiết):**\n"
+            "- Nếu họng đau buốt nhiều hoặc người hâm hấp sốt, bạn có thể uống **Paracetamol 500mg** (1 viên/lần, cách nhau 4 - 6 tiếng). *Lưu ý: Không uống Paracetamol ngay lúc đang say rượu bia.*\n\n"
+            "❌ **3. LƯU Ý ĐẶC BIỆT QUAN TRỌNG:**\n"
+            "- **Tuyệt đối KHÔNG tự ý mua thuốc kháng sinh** (như Amoxicillin, Augmentin, Cephalexin...) để tự uống. Đa số các đợt rát họng ban đầu là do kích ứng cơ học hoặc virus, kháng sinh không có tác dụng với virus và kích ứng mà còn gây hại men gan, rối loạn tiêu hóa và kháng thuốc!\n"
+            "- Chỉ dùng kháng sinh khi có chỉ định trực tiếp từ bác sĩ sau khi thăm khám.\n\n"
+            "Nếu sau 2 - 3 ngày tình trạng rát họng không đỡ hoặc xuất hiện sốt, bạn nên đi khám chuyên khoa Tai Mũi Họng nhé!"
+        )
+        return {
+            'reply': reply,
+            'stage': 'general',
+            'suggested_specialty': 'Tai Mũi Họng',
+            'quick_replies': [
+                'Viên ngậm loại nào tốt?',
+                'Khi nào cần đi khám?',
+                'Tôi muốn đặt lịch khám'
+            ]
+        }
+
+    # 4. Người dùng cảm ơn, chào hỏi thân mật
+    thanks_keywords = ['cảm ơn', 'cam on', 'thank', 'thanks', 'cám ơn', 'tuyệt vời', 'ok bạn', 'cảm ơn bác sĩ']
+    if any(k in msg_clean for k in thanks_keywords):
+        reply = (
+            "Dạ không có gì bạn nhé! Được đồng hành và hỗ trợ bạn chăm sóc sức khỏe là niềm vui lớn của mình. 🌸\n\n"
+            "Bạn nhớ chú ý nghỉ ngơi, uống đủ nước ấm và giữ gìn sức khỏe hôm nay nhé. Bất cứ khi nào bạn có thắc mắc về ăn uống, dinh dưỡng hay sức khỏe, cứ nhắn cho mình nhé!\n\n"
+            "Chúc bạn một ngày tràn đầy năng lượng và thật nhiều niềm vui! ✨"
+        )
+        return {
+            'reply': reply,
+            'stage': 'general',
+            'quick_replies': [
+                'Ăn gì tốt cho sức khỏe?',
+                'Tư vấn dinh dưỡng dạ dày',
+                'Đặt lịch khám bệnh'
+            ]
+        }
+
+    return None
+
+
+# ================= 4. BỘ ÁNH XẠ TRIỆU CHỨNG LÂM SÀNG VỚI LỜI VĂN TỰ NHIÊN =================
+SYMPTOM_CLINICAL_MAP = {
+    'tai mũi họng': {
+        'keywords': ['đau họng', 'rát họng', 'khàn tiếng', 'mất tiếng', 'viêm xoang', 'nghẹt mũi', 'ngạt mũi', 'sổ mũi', 'ù tai', 'chảy máu cam', 'viêm amidan', 'ho khan', 'ho có đờm', 'viêm họng', 'rát cổ'],
+        'specialty_name': 'Tai Mũi Họng',
+        'greeting': 'Chào bạn nhé! Nghe bạn chia sẻ về các triệu chứng ở vùng tai mũi họng, mình rất hiểu cảm giác vướng víu, khó chịu mà bạn đang trải qua.',
+        'clinical_cause': 'Các biểu hiện như đau họng, nghẹt mũi hoặc ho thường do kích ứng niêm mạc, viêm đường hô hấp trên hoặc viêm xoang dị ứng khi thời tiết thay đổi hay do tiếp xúc với khói bụi, đồ uống lạnh.',
+        'home_care': 'Bạn nên súc miệng và họng sâu bằng nước muối sinh lý ấm (0.9%) 3-4 lần/ngày, uống nhiều nước ấm pha mật ong gừng, giữ ấm vùng cổ ngực và tránh uống nước đá lạnh.',
+        'red_flags': 'Nếu bạn có dấu hiệu sốt cao khó hạ, nuốt đau buốt lan lên tai, khạc đờm đặc màu xanh vàng hoặc khó thở, bạn nên thăm khám bác sĩ sớm để tránh biến chứng viêm phế quản hoặc viêm phổi nhé.'
     },
     'tiêu hóa': {
-        'keywords': ['đau bụng', 'đau dạ dày', 'ợ chua', 'ợ hơi', 'trào ngược', 'tiêu chảy', 'táo bón', 'nôn mửa', 'buồn nôn', 'khó tiêu', 'đầy bụng', 'viêm loét', 'đại tràng', 'trĩ'],
+        'keywords': ['đau bụng', 'đau dạ dày', 'đau thượng vị', 'ợ chua', 'ợ hơi', 'trào ngược', 'tiêu chảy', 'táo bón', 'nôn mửa', 'buồn nôn', 'khó tiêu', 'đầy bụng', 'viêm loét', 'đại tràng', 'trĩ', 'đi ngoài'],
         'specialty_name': 'Tiêu hóa',
-        'advice': 'Các triệu chứng như đau thượng vị, ợ chua hay đầy hơi thường liên quan đến viêm loét dạ dày tá tràng hoặc trào ngược dạ dày thực quản (GERD). Nên ăn đúng bữa, kiêng đồ chua cay, dầu mỡ và đồ uống có cồn.',
-        'urgent': 'Nếu nôn ra máu, đi ngoài phân đen hoặc đau quặn dữ dội, cần đi viện cấp cứu ngay.'
+        'greeting': 'Chào bạn nhé! Đau dạ dày hay các rối loạn tiêu hóa luôn khiến cơ thể mệt mỏi và ăn uống mất ngon.',
+        'clinical_cause': 'Các biểu hiện như đau âm ỉ thượng vị, ợ hơi, ợ chua hay đầy chướng bụng thường liên quan đến viêm loét dạ dày - tá tràng hoặc trào ngược dạ dày thực quản (GERD), thường bùng phát do căng thẳng, ăn uống thất thường hoặc đồ cay nóng.',
+        'home_care': 'Bạn nên ăn các món lỏng ấm như cháo, súp; uống nước ấm tinh bột nghệ mật ong; chia nhỏ bữa ăn và tuyệt đối không để bụng quá đói hay ăn quá no; kiêng đồ chua cay, dầu mỡ và đồ uống có cồn.',
+        'red_flags': 'Nếu xuất hiện cơn đau quặn dữ dội, nôn ra máu, đi ngoài phân đen như bã cà phê hoặc nôn liên tục không dứt, bạn cần đến bệnh viện cấp cứu ngay!'
     },
-    'tai mũi họng': {
-        'keywords': ['đau họng', 'rát họng', 'viêm xoang', 'nghẹt mũi', 'sổ mũi', 'ù tai', 'chảy máu cam', 'khàn tiếng', 'viêm amidan', 'ho khan', 'ho có đờm', 'viêm họng'],
-        'specialty_name': 'Tai Mũi Họng',
-        'advice': 'Đau họng, nghẹt mũi thường do viêm đường hô hấp trên hoặc viêm xoang dị ứng khi thời tiết thay đổi. Bạn có thể súc họng bằng nước muối sinh lý ấm, giữ ấm cổ họng.',
-        'urgent': 'Nếu sốt cao khó hạ kèm khó thở nặng, cần đến gặp bác sĩ kiểm tra trực tiếp.'
+    'thần kinh': {
+        'keywords': ['đau đầu', 'nhức đầu', 'chóng mặt', 'hoa mắt', 'mất ngủ', 'tiền đình', 'đột quỵ', 'tê tay chân', 'tê bì', 'co giật', 'nửa đầu', 'tai biến', 'choáng váng'],
+        'specialty_name': 'Thần kinh',
+        'greeting': 'Chào bạn! Cơn đau đầu hay cảm giác chóng mặt hoa mắt thực sự làm ảnh hưởng rất nhiều đến công việc và sinh hoạt hàng ngày.',
+        'clinical_cause': 'Đau đầu, chóng mặt thường do căng thẳng thần kinh (stress), thiếu máu lên não, đau nửa đầu Migraine hoặc rối loạn tiền đình. Thức khuya hay làm việc trước máy tính liên tục cũng là tác nhân kích hoạt phổ biến.',
+        'home_care': 'Bạn nên dành thời gian nghỉ ngơi ở nơi yên tĩnh, thoáng khí, mát mẻ; xoa bóp nhẹ nhàng vùng thái dương và cổ gáy; uống đủ nước ấm và tránh tiếp xúc với ánh sáng màn hình điện tử.',
+        'red_flags': 'CẢNH BÁO NGUY HIỂM: Nếu cơn đau đầu dữ dội đột ngột, kèm theo méo miệng, nói ngọng, nhìn mờ hoặc yếu liệt một bên tay chân, đây có thể là dấu hiệu đột quỵ tai biến - phải gọi cấp cứu 115 ngay lập tức!'
     },
-    'nhi khoa': {
-        'keywords': ['trẻ em', 'em bé', 'trẻ sơ sinh', 'bé sốt', 'bé quấy khóc', 'biếng ăn', 'bé nôn', 'sởi', 'thủy đậu', 'chân tay miệng', 'tiêm chủng'],
-        'specialty_name': 'Nhi khoa',
-        'advice': 'Sức đề kháng của trẻ còn non nớt. Khi bé sốt cần cho mặc quần áo thoáng mát, chườm ấm và bù nước oresol đúng cách. Tuyệt đối không tự ý cho trẻ dùng kháng sinh khi chưa có chỉ định.',
-        'urgent': 'Bé sốt cao co giật, bỏ bú, ngủ li bì hoặc thở rút lõm lồng ngực là dấu hiệu cần cấp cứu ngay!'
-    },
-    'da liễu': {
-        'keywords': ['ngứa da', 'dị ứng', 'mẩn đỏ', 'mụn trứng cá', 'chàm', 'vảy nến', 'rụng tóc', 'nổi mề đay', 'phát ban', 'nấm da', 'viêm da'],
-        'specialty_name': 'Da liễu',
-        'advice': 'Nổi mẩn ngứa hoặc phát ban có thể do viêm da tiếp xúc, dị ứng thời tiết hoặc thức ăn. Tránh cào gãi làm trầy xước nhiễm trùng và giữ da luôn sạch sẽ.',
-        'urgent': 'Nếu phát ban kèm phù môi, mí mắt hoặc khó thở, đây có thể là phản vệ khẩn cấp.'
+    'tim mạch': {
+        'keywords': ['đau ngực', 'tức ngực', 'khó thở', 'hồi hộp', 'tim đập nhanh', 'huyết áp cao', 'tăng huyết áp', 'hạ huyết áp', 'nhói tim', 'mạch vành', 'đánh trống ngực'],
+        'specialty_name': 'Tim mạch',
+        'greeting': 'Chào bạn! Các triệu chứng liên quan đến lồng ngực và nhịp tim luôn cần được quan tâm và theo dõi hết sức cẩn trọng.',
+        'clinical_cause': 'Cảm giác tức ngực, hồi hộp, tim đập nhanh có thể liên quan đến rối loạn thần kinh tim do lo âu, rối loạn nhịp tim hoặc các bệnh lý tim mạch như tăng huyết áp, thiếu máu cơ tim cục bộ.',
+        'home_care': 'Bạn nên ngồi nghỉ ngơi ở tư thế nửa nằm nửa ngồi, nới lỏng cổ áo, thở chậm và sâu để giữ tinh thần thật bình tĩnh, hạn chế vận động gắng sức.',
+        'red_flags': 'KHẨN CẤP: Nếu xuất hiện cơn đau thắt nghẹn như đá đè sau xương ức, lan lên cằm, vai hoặc cánh tay trái kéo dài trên 10-15 phút kèm toát mồ hôi lạnh, bạn cần đến cơ sở cấp cứu tim mạch gần nhất ngay!'
     },
     'cơ xương khớp': {
-        'keywords': ['đau lưng', 'thoát vị', 'đau khớp', 'khớp gối', 'thoái hóa', 'mỏi vai gáy', 'đau nhức xương', 'gút', 'acid uric', 'viêm khớp'],
+        'keywords': ['đau lưng', 'thoát vị', 'đau khớp', 'khớp gối', 'thoái hóa', 'mỏi vai gáy', 'đau nhức xương', 'gút', 'acid uric', 'viêm khớp', 'đau cổ', 'cứng khớp'],
         'specialty_name': 'Cơ xương khớp',
-        'advice': 'Đau mỏi vai gáy hoặc đau khớp gối thường gặp ở người làm việc văn phòng hoặc người cao tuổi do thoái hóa. Nên duy trì vận động nhẹ nhàng, điều chỉnh tư thế ngồi thẳng.',
-        'urgent': 'Nếu khớp sưng to nóng đỏ cấp tính hoặc không cử động được, cần thăm khám sớm.'
+        'greeting': 'Chào bạn nhé! Những cơn đau mỏi xương khớp hay cột sống luôn gây cảm giác bức bối, cản trở việc đi lại và vận động.',
+        'clinical_cause': 'Đau mỏi vai gáy hay đau lưng thường bắt nguồn từ sai tư thế khi ngồi làm việc lâu, thoái hóa đốt sống hoặc thoát vị đĩa đệm. Viêm khớp hoặc gút cũng gây sưng đau các khớp ngón chân, cổ chân.',
+        'home_care': 'Bạn có thể chườm ấm vùng đau mỏi 15-20 phút, xoa bóp nhẹ nhàng, thực hiện các bài tập kéo giãn cơ nhẹ và điều chỉnh lại tư thế ngồi thẳng lưng.',
+        'red_flags': 'Nếu khớp sưng to, nóng đỏ cấp tính hoặc có dấu hiệu tê bì mất cảm giác lan xuống bàn chân, bạn nên đi khám chuyên khoa Cơ Xương Khớp sớm.'
+    },
+    'da liễu': {
+        'keywords': ['ngứa da', 'dị ứng', 'mẩn đỏ', 'mụn trứng cá', 'chàm', 'vảy nến', 'rụng tóc', 'nổi mề đay', 'phát ban', 'nấm da', 'viêm da', 'mẩn ngứa'],
+        'specialty_name': 'Da liễu',
+        'greeting': 'Chào bạn nhé! Ngứa ngáy hay nổi mẩn đỏ trên da luôn mang lại cảm giác vô cùng khó chịu và bứt rứt.',
+        'clinical_cause': 'Nổi mẩn ngứa thường là phản ứng của viêm da tiếp xúc, dị ứng thức ăn (hải sản, trứng, sữa) hoặc nổi mề đay do thời tiết thay đổi, côn trùng cắn.',
+        'home_care': 'Bạn nên tắm bằng nước mát hoặc ấm vừa, dùng sữa tắm dịu nhẹ; tránh cào gãi làm trầy xước nhiễm trùng da; có thể chườm mát nhẹ để giảm cơn ngứa.',
+        'red_flags': 'CẢNH BÁO PHẢN VỆ: Nếu nổi mề đay lan nhanh khắp người kèm theo sưng phù môi, mí mắt, khó thở, nghẹn họng hoặc tụt huyết áp, phải đến phòng cấp cứu ngay lập tức!'
+    },
+    'nhi khoa': {
+        'keywords': ['trẻ em', 'em bé', 'trẻ sơ sinh', 'bé sốt', 'bé quấy khóc', 'biếng ăn', 'bé nôn', 'sởi', 'thủy đậu', 'chân tay miệng', 'tiêm chủng', 'con tôi'],
+        'specialty_name': 'Nhi khoa',
+        'greeting': 'Chào bạn! Chăm sóc bé khi con bị ốm quả thực làm cha mẹ rất xót ruột và lo lắng.',
+        'clinical_cause': 'Hệ miễn dịch của trẻ nhỏ còn non nớt nên rất dễ bị sốt do virus, viêm họng hoặc rối loạn tiêu hóa khi thời tiết chuyển mùa.',
+        'home_care': 'Cho bé mặc quần áo mỏng thoáng mát; chườm ấm các vùng nách, bẹn khi sốt; cho bé bú nhiều cữ hoặc uống bù nước Oresol theo đúng tỉ lệ; dùng Paracetamol hạ sốt cho trẻ đúng liều (10-15mg/kg cân nặng) khi sốt >= 38.5°C.',
+        'red_flags': 'ĐƯA BÉ ĐI VIỆN NGAY NẾU: Bé sốt cao co giật, thở rút lõm lồng ngực, bỏ bú, ngủ li bì khó đánh thức, nôn ói tất cả mọi thứ hoặc có ban xuất huyết dưới da!'
     },
     'mắt': {
-        'keywords': ['đau mắt', 'đỏ mắt', 'mờ mắt', 'cận thị', 'chảy nước mắt', 'cộm mắt', 'mắt nhức', 'loạn thị', 'viêm kết mạc'],
+        'keywords': ['đau mắt', 'đỏ mắt', 'mờ mắt', 'cận thị', 'chảy nước mắt', 'cộm mắt', 'nhức mắt', 'loạn thị', 'viêm kết mạc', 'đau mắt đỏ'],
         'specialty_name': 'Mắt (Nhãn khoa)',
-        'advice': 'Đau mắt, cộm xốn có thể do viêm kết mạc hoặc hội chứng thị giác màn hình. Nhỏ nước mắt nhân tạo, cho mắt nghỉ ngơi theo quy tắc 20-20-20.',
-        'urgent': 'Nếu nhìn mờ đột ngột hoặc thấy chớp sáng kèm đau nhức sâu trong hốc mắt, cần khám mắt ngay.'
-    },
-    'sản phụ khoa': {
-        'keywords': ['mang thai', 'mẹ bầu', 'kinh nguyệt', 'chậm kinh', 'ốm nghén', 'phụ khoa', 'khám thai', 'sinh con'],
-        'specialty_name': 'Sản - Phụ khoa',
-        'advice': 'Trong thai kỳ, phụ nữ cần khám định kỳ theo mốc, bổ sung Sắt, Axit Folic và Canxi đầy đủ theo chỉ dẫn y khoa.',
-        'urgent': 'Nếu đau bụng dữ dội hoặc xuất huyết âm đạo bất thường trong thai kỳ, phải đến viện ngay.'
+        'greeting': 'Chào bạn! Đôi mắt là cửa sổ tâm hồn, khi mắt bị đau cộm hay mờ đi sẽ ảnh hưởng rất lớn đến mọi sinh hoạt.',
+        'clinical_cause': 'Đau mắt, đỏ mắt, cộm xốn thường do viêm kết mạc (đau mắt đỏ), dị vật bay vào mắt hoặc hội chứng thị giác màn hình do dùng thiết bị điện tử quá lâu.',
+        'home_care': 'Rửa mắt bằng nước muối sinh lý NaCl 0.9% chuyên dùng cho mắt; nhỏ nước mắt nhân tạo; cho mắt nghỉ ngơi hoàn toàn và tránh dụi mắt làm xước giác mạc.',
+        'red_flags': 'Nếu nhìn mờ đột ngột, thấy quầng sáng quanh đèn kèm đau nhức buốt sâu trong hốc mắt, bạn cần đến khám chuyên khoa Mắt ngay.'
     },
     'nội tổng quát': {
-        'keywords': ['sốt', 'mệt mỏi', 'sụt cân', 'khám tổng quát', 'kiểm tra sức khỏe', 'khám định kỳ', 'ốm', 'sức khỏe'],
+        'keywords': ['sốt', 'mệt mỏi', 'sụt cân', 'khám tổng quát', 'kiểm tra sức khỏe', 'khám định kỳ', 'ốm', 'sức khỏe', 'người yếu'],
         'specialty_name': 'Nội tổng quát',
-        'advice': 'Khám Nội tổng quát là bước đầu tiên tối ưu giúp bạn kiểm tra các chỉ số sức khỏe tổng thể, thực hiện xét nghiệm cơ bản và được bác sĩ định hướng điều trị.',
-        'urgent': ''
+        'greeting': 'Chào bạn nhé! Khi cơ thể cảm thấy mệt mỏi, uể oải hay có dấu hiệu bất thường, việc lắng nghe sức khỏe bản thân là điều vô cùng đúng đắn.',
+        'clinical_cause': 'Cảm giác mệt mỏi, sụt cân hay người ốm yếu có thể xuất phát từ suy nhược cơ thể, thiếu máu, rối loạn chức năng tuyến giáp hoặc cần kiểm tra các chỉ số đường huyết, men gan.',
+        'home_care': 'Bạn nên chú ý ăn uống đủ chất, bổ sung vitamin, ngủ đủ giấc và uống nhiều nước ấm để cơ thể hồi phục.',
+        'red_flags': 'Nếu tình trạng mệt mỏi kéo dài không rõ nguyên nhân, bạn nên làm xét nghiệm tổng quát để bác sĩ tầm soát chính xác.'
     }
 }
-
-DISCLAIMER_TEXT = "💡 *Lưu ý y khoa: Thông tin do AI cung cấp chỉ mang tính chất tham khảo, không thay thế chẩn đoán hoặc đơn thuốc chuyên môn của bác sĩ.*"
-
-
-def call_openai_medical_chat(user_message):
-    """
-    Gọi OpenAI API (khi có OPENAI_API_KEY) để trả lời mọi thắc mắc y tế, dinh dưỡng, sức khỏe, lối sống
-    """
-    api_key = os.environ.get('OPENAI_API_KEY', '').strip()
-    if not api_key:
-        return None
-
-    system_prompt = (
-        "Bạn là Bác sĩ Trợ lý Y tế AI (Medical AI Assistant) - chuyên gia tận tâm tư vấn về y tế, sức khỏe, "
-        "chế độ ăn uống, dinh dưỡng khoa học, lối sống lành mạnh, chăm sóc gia đình và sơ cứu ban đầu.\n"
-        "- Trả lời bằng tiếng Việt tự nhiên, ân cần, định dạng rõ ràng bằng gạch đầu dòng và emoji sinh động.\n"
-        "- Đưa ra các hướng dẫn khoa học, chi tiết về thực phẩm nên ăn, nên kiêng, cách chế biến, cách sinh hoạt.\n"
-        "- Luôn kèm lưu ý y khoa khi cần thiết và cảnh báo dấu hiệu nguy hiểm nếu có.\n"
-        "- Không phán đoán độc đoán mà tư vấn trên góc độ y học chứng cứ."
-    )
-
-    try:
-        headers = {
-            'Authorization': f"Bearer {api_key}",
-            'Content-Type': 'application/json'
-        }
-        payload = {
-            'model': 'gpt-4o-mini',
-            'messages': [
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_message}
-            ],
-            'temperature': 0.7,
-            'max_tokens': 900
-        }
-        resp = requests.post('https://api.openai.com/v1/chat/completions', headers=headers, json=payload, timeout=12)
-        if resp.status_code == 200:
-            res_json = resp.json()
-            ai_text = res_json['choices'][0]['message']['content'].strip()
-            return ai_text
-    except Exception:
-        pass
-    return None
 
 
 def get_doctor_active_slots(doctor, max_slots=8):
     """
-    Lấy danh sách các slot khám đang hoạt động của bác sĩ.
-    Nếu DB tạm thời chưa có, tự động tạo các khung giờ chuẩn cho các ngày làm việc tới.
+    Lấy danh sách các khung giờ khám còn trống của bác sĩ.
+    Nếu DB chưa có sẵn, tự động sinh các khung giờ chuẩn cho các ngày tới.
     """
     today = timezone.now().date()
     slots_qs = LichLamViec.objects.filter(bac_si=doctor, ngay__gte=today, trang_thai=True).order_by('ngay', 'gio_bat_dau')[:max_slots]
@@ -325,13 +630,15 @@ def get_doctor_active_slots(doctor, max_slots=8):
     return slots_list
 
 
+# ================= 5. HÀM XỬ LÝ CHÍNH (PROCESS_MEDICAL_CHAT) =================
+
 def process_medical_chat(user_message, session=None):
     """
     Hàm xử lý tin nhắn trung tâm:
-    - Trả lời thông minh mọi câu hỏi về dinh dưỡng, ăn uống, sức khỏe, lối sống, sơ cứu, y học.
-    - Phân biệt rõ giữa:
-      1) Hỏi đáp kiến thức sức khỏe/ăn uống -> Trả lời chi tiết, KHÔNG ép nút đặt lịch.
-      2) Yêu cầu đặt lịch khám / Hỏi bệnh viện / Mô tả bệnh lý muốn đi khám -> Kích hoạt quy trình gợi ý bác sĩ và đặt lịch.
+    - Trả lời tự nhiên, ân cần, giàu cảm xúc thấu cảm như người với người.
+    - Xử lý mượt mà ngữ cảnh thực tế (Uống bia tối qua sáng nay rát họng, thức khuya đau đầu, nằm điều hòa cảm...).
+    - Hỏi han ân cần, không chèn ép đặt lịch thô bạo.
+    - Kết nối Google Gemini API / OpenAI API khi có key, hoặc dùng bộ Clinical AI Engine thông minh offline.
     """
     msg_clean = user_message.lower().strip()
 
@@ -345,58 +652,80 @@ def process_medical_chat(user_message, session=None):
         'quick_replies': []
     }
 
-    # ================= 1. KIỂM TRA INTENT ĐẶT LỊCH / CHỌN TỈNH / BỆNH VIỆN =================
     all_provinces = list(TinhThanh.objects.all())
 
-    # 1.0 Kiểm tra ngữ cảnh tin nhắn trước đó (Session history)
+    # Lấy ngữ cảnh hội thoại trước đó từ session
     prev_specialty = None
     last_stage = None
+    conversation_history = []
     if session:
+        recent_messages = list(session.messages.all().order_by('-created_at')[:6])
+        recent_messages.reverse()
+        for m in recent_messages:
+            conversation_history.append({
+                'role': 'assistant' if m.sender == 'ai' else 'user',
+                'content': m.message
+            })
         last_ai_msg = session.messages.filter(sender='ai').order_by('-created_at').first()
         if last_ai_msg and last_ai_msg.data_json:
             prev_specialty = last_ai_msg.data_json.get('suggested_specialty')
             last_stage = last_ai_msg.data_json.get('stage')
 
-    # A. Nếu người dùng xác nhận ĐỒNG Ý / MUỐN ĐẶT LỊCH
-    booking_affirmative_exact = ['có', 'co', 'ok', 'yes', 'được', 'duoc', 'đặt', 'dat', 'đặt lịch', 'dat lich', 'đặt khám', 'dat kham', 'đồng ý', 'dong y', 'muốn', 'muon']
+    # ================= BƯỚC 1: KIỂM TRA ĐỒNG Ý / TỪ CHỐI ĐẶT LỊCH CHÍNH XÁC =================
+    booking_affirmative_exact = [
+        'có', 'co', 'ok', 'yes', 'được', 'duoc', 'đặt', 'dat',
+        'đặt lịch', 'dat lich', 'đặt khám', 'dat kham', 'đồng ý', 'dong y',
+        'có nhé', 'co nhe', 'có nha', 'co nha', 'có ạ', 'co a', 'có chứ', 'co chu',
+        'có bạn ơi', 'có giúp tôi', 'hỗ trợ tôi đặt', 'đặt luôn', 'dat luon',
+        'có đặt', 'co dat', 'có tôi muốn đặt', 'muốn đặt', 'muon dat'
+    ]
     booking_affirmative_phrases = [
         'muốn đặt lịch', 'muon dat lich', 'có đặt lịch', 'co dat lich',
         'có, tôi muốn đặt lịch khám', 'tôi muốn đặt lịch', 'muốn khám', 'muon kham',
         'hỗ trợ đặt lịch', 'xem bác sĩ', 'xem bac si', 'chọn bác sĩ', 'chon bac si',
-        'đặt hẹn', 'dat hen', 'khám bệnh', 'kham benh'
+        'đặt hẹn', 'dat hen', 'đặt lịch khám', 'dat lich kham', 'muốn đi khám', 'muon di kham',
+        'giúp tôi đặt lịch', 'đặt lịch cho tôi'
     ]
-    is_affirming_booking = (
-        msg_clean in booking_affirmative_exact or
-        any(phrase in msg_clean for phrase in booking_affirmative_phrases) or
-        (last_stage == 'ask_booking_confirmation' and ('có' in msg_clean or 'đặt' in msg_clean or 'muốn' in msg_clean))
-    )
 
-    # B. Nếu người dùng TỪ CHỐI / CHƯA MUỐN ĐẶT LỊCH
-    booking_declining_exact = ['chưa', 'chua', 'không', 'khong', 'thôi', 'thoi', 'no']
+    is_affirming_booking = False
+    if msg_clean in booking_affirmative_exact:
+        is_affirming_booking = True
+    elif any(phrase in msg_clean for phrase in booking_affirmative_phrases):
+        is_affirming_booking = True
+    elif last_stage == 'ask_booking_confirmation':
+        # Phải bắt đầu bằng từ khẳng định và không phải là câu mô tả triệu chứng 'có bị...', 'có sốt...'
+        if re.match(r'^(có|co|ok|yes|được|duoc)\b', msg_clean) and not any(w in msg_clean for w in ['có bị', 'có rát', 'có đau', 'có sốt', 'có mỏi', 'có đờm', 'có nôn']):
+            is_affirming_booking = True
+        elif any(w in msg_clean for w in ['đặt lịch', 'đặt khám', 'muốn khám', 'chọn bác sĩ']):
+            is_affirming_booking = True
+
+    # Người dùng từ chối đặt lịch
+    booking_declining_exact = ['chưa', 'chua', 'không', 'khong', 'thôi', 'thoi', 'no', 'chưa cần', 'không cần']
     booking_declining_phrases = [
         'chưa cần', 'chua can', 'chưa muốn', 'chua muon', 'không cần', 'khong can',
-        'chưa, tôi muốn hỏi thêm', 'tôi muốn hỏi thêm', 'chưa muốn đặt', 'để sau', 'de sau'
+        'chưa, tôi muốn hỏi thêm', 'tôi muốn hỏi thêm', 'chưa muốn đặt', 'để sau', 'de sau', 'hỏi thêm đã'
     ]
     is_declining_booking = (
         msg_clean in booking_declining_exact or
         any(phrase in msg_clean for phrase in booking_declining_phrases)
     )
 
-    if is_declining_booking and last_stage == 'ask_booking_confirmation':
+    if is_declining_booking and last_stage in ['ask_booking_confirmation', 'lifestyle_alcohol_throat']:
         response_data['stage'] = 'general'
         response_data['reply'] = (
-            "Dạ vâng, hoàn toàn không sao bạn nhé! Bạn hãy dành thời gian nghỉ ngơi, theo dõi thêm các phản ứng của cơ thể và chú ý các hướng dẫn chăm sóc ban đầu.\n\n"
-            "Nếu bạn có bất kỳ câu hỏi nào về chế độ ăn uống, thói quen sinh hoạt hay cần tư vấn thêm triệu chứng gì, bạn cứ nhắn cho tôi bất kỳ lúc nào nhé! Chúc bạn mau khỏe! 🌸"
+            "Dạ vâng, hoàn toàn không sao bạn nhé! Bạn hãy dành thời gian nghỉ ngơi, theo dõi thêm các phản ứng của cơ thể và áp dụng các hướng dẫn làm dịu họng tại nhà nhé.\n\n"
+            "Nếu bạn có bất kỳ câu hỏi nào về ăn uống, cách chăm sóc hay cần tư vấn thêm triệu chứng gì, bạn cứ nhắn cho mình bất kỳ lúc nào nhé! Chúc bạn mau khỏe và có một ngày thật tốt lành! 🌸"
         )
         response_data['quick_replies'] = [
             'Ăn gì tốt cho sức khỏe?',
-            'Cách chăm sóc tại nhà',
+            'Uống nước thế nào đúng cách',
             'Khi nào cần đi khám bác sĩ?'
         ]
         return response_data
 
+    # Người dùng đồng ý đặt lịch khám
     if is_affirming_booking and (prev_specialty or last_stage == 'ask_booking_confirmation' or 'đặt lịch' in msg_clean or 'khám' in msg_clean):
-        target_specialty = prev_specialty or 'Nội tổng quát'
+        target_specialty = prev_specialty or 'Tai Mũi Họng'
         specialty_doctors = BacSi.objects.filter(
             chuyen_khoa__ten_chuyen_khoa=target_specialty,
             trang_thai=True
@@ -426,13 +755,13 @@ def process_medical_chat(user_message, session=None):
         response_data['suggested_provinces'] = [p.ten_tinh for p in all_provinces]
         response_data['quick_replies'] = [p.ten_tinh for p in all_provinces]
         response_data['reply'] = (
-            f"Dạ vâng! Tôi rất sẵn lòng hỗ trợ bạn kết nối và đặt lịch khám với Bác sĩ chuyên khoa **{target_specialty}**. 🩺\n\n"
+            f"Dạ vâng! Mình rất sẵn lòng hỗ trợ bạn kết nối và đặt lịch khám với Bác sĩ chuyên khoa **{target_specialty}**. 🩺\n\n"
             f"👉 Bạn có thể bấm chọn **Tỉnh/Thành phố** bên dưới để tìm bệnh viện gần bạn nhất, "
-            f"hoặc bấm **'Chọn bác sĩ này'** ở danh sách bên dưới để xem khung giờ trống và đặt lịch trực tiếp:"
+            f"hoặc bấm nút **'Chọn bác sĩ này'** ở danh sách bên dưới để xem khung giờ trống và đặt lịch trực tiếp nhé:"
         )
         return response_data
-    
-    # 1.1 Người dùng chủ động chọn Tỉnh/Thành phố
+
+    # ================= BƯỚC 2: NGƯỜI DÙNG CHỦ ĐỘNG CHỌN TỈNH / BỆNH VIỆN =================
     matched_province = None
     for prov in all_provinces:
         if prov.ten_tinh.lower() in msg_clean:
@@ -457,13 +786,12 @@ def process_medical_chat(user_message, session=None):
         response_data['suggested_hospitals'] = hospital_list
         response_data['reply'] = (
             f"📍 **Các bệnh viện uy tín tại {matched_province.ten_tinh}**:\n\n"
-            f"Hệ thống tìm thấy **{len(hospital_list)} bệnh viện** tại địa phương này. "
+            f"Hệ thống tìm thấy **{len(hospital_list)} bệnh viện** tiếp nhận đặt lịch trực tuyến. "
             f"Bạn muốn đặt lịch khám tại bệnh viện nào dưới đây?"
         )
         response_data['quick_replies'] = [h['ten'] for h in hospital_list]
         return response_data
 
-    # 1.2 Người dùng chủ động chọn Bệnh viện
     matched_hospital = None
     for h in BenhVien.objects.all():
         if h.ten_benh_vien.lower() in msg_clean:
@@ -502,30 +830,72 @@ def process_medical_chat(user_message, session=None):
             f"🏥 Bạn đã chọn: **{matched_hospital.ten_benh_vien}**\n"
             f"📍 Địa chỉ: {matched_hospital.dia_chi}\n"
             f"📞 Hotline: {matched_hospital.so_dien_thoai}\n\n"
-            f"Dưới đây là danh sách **bác sĩ chuyên khoa** (gồm cả bác sĩ nam và nữ) đang trực tiếp nhận lịch khám. "
-            f"Bạn vui lòng chọn một bác sĩ bên dưới để xem khung giờ trống và tiến hành đặt lịch:"
+            f"Dưới đây là danh sách **bác sĩ chuyên khoa** đang trực tiếp nhận lịch. "
+            f"Bạn vui lòng chọn một bác sĩ bên dưới để xem khung giờ trống và tiến hành đặt lịch khám:"
         )
         return response_data
 
-    # ================= 2. KIỂM TRA HỎI ĐÁP DINH DƯỠNG, ĂN UỐNG & SỨC KHỎE ĐỜI SỐNG =================
-    matched_health_topics = []
+    # ================= BƯỚC 3: XỬ LÝ LƯỢT HỘI THOẠI NỐI TIẾP (FOLLOW-UP TURNS) =================
+    followup_res = handle_followup_turns(msg_clean, session)
+    if followup_res:
+        response_data.update(followup_res)
+        return response_data
+
+    # ================= BƯỚC 4: XỬ LÝ HOÀN CẢNH ĐỜI SỐNG THỰC TẾ (LIFESTYLE TRIGGERS) =================
+    # 4.1 Bia rượu / Nhậu + Rát họng / Khô họng (Kịch bản người dùng yêu cầu!)
+    throat_alcohol_res = handle_alcohol_throat_context(msg_clean)
+    if throat_alcohol_res:
+        llm_reply = call_external_llm(user_message, conversation_history)
+        if llm_reply:
+            throat_alcohol_res['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
+        response_data.update(throat_alcohol_res)
+        return response_data
+
+    # 4.2 Bia rượu + Say / Đau đầu / Buồn nôn / Nôn nao / Giải rượu
+    headache_alcohol_res = handle_alcohol_headache_hangover(msg_clean)
+    if headache_alcohol_res:
+        llm_reply = call_external_llm(user_message, conversation_history)
+        if llm_reply:
+            headache_alcohol_res['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
+        response_data.update(headache_alcohol_res)
+        return response_data
+
+    # 4.3 Máy lạnh / Điều hòa / Nhiễm lạnh + Rát họng / Sổ mũi
+    cold_ac_res = handle_cold_air_conditioning(msg_clean)
+    if cold_ac_res:
+        llm_reply = call_external_llm(user_message, conversation_history)
+        if llm_reply:
+            cold_ac_res['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
+        response_data.update(cold_ac_res)
+        return response_data
+
+    # 4.4 Thức khuya / Làm việc máy tính + Đau đầu / Mỏi mắt
+    screen_strain_res = handle_late_night_screen_strain(msg_clean)
+    if screen_strain_res:
+        llm_reply = call_external_llm(user_message, conversation_history)
+        if llm_reply:
+            screen_strain_res['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
+        response_data.update(screen_strain_res)
+        return response_data
+
+    # ================= BƯỚC 5: HỎI ĐÁP DINH DƯỠNG, ĂN UỐNG & SỐNG KHỎE =================
+    best_health_topic = None
+    longest_health_kw = 0
     for topic in HEALTH_KNOWLEDGE_BASE:
         for kw in topic['keywords']:
-            if kw in msg_clean:
-                matched_health_topics.append(topic)
-                break
+            if kw in msg_clean and len(kw) > longest_health_kw:
+                best_health_topic = topic
+                longest_health_kw = len(kw)
 
-    if matched_health_topics:
-        primary_topic = matched_health_topics[0]
-        
-        openai_reply = call_openai_medical_chat(user_message)
-        if openai_reply:
-            response_data['reply'] = openai_reply + f"\n\n{DISCLAIMER_TEXT}"
+    if best_health_topic:
+        llm_reply = call_external_llm(user_message, conversation_history)
+        if llm_reply:
+            response_data['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
         else:
             response_data['reply'] = (
-                f"{primary_topic['response']}\n\n"
+                f"{best_health_topic['response']}\n\n"
                 f"{DISCLAIMER_TEXT}\n\n"
-                f"💬 *Bạn có thể hỏi thêm về bất kỳ thực phẩm, chế độ dinh dưỡng hoặc vấn đề sức khỏe nào khác!*"
+                f"💬 *Bạn có thể hỏi thêm về bất kỳ món ăn, thực phẩm hay vấn đề sức khỏe nào khác nhé!*"
             )
 
         response_data['stage'] = 'general'
@@ -534,37 +904,28 @@ def process_medical_chat(user_message, session=None):
             'Chế độ ăn cho người tiểu đường',
             'Cách giảm cân an toàn',
             'Uống nước thế nào đúng cách',
-            'Bí quyết ngủ ngon'
+            'Bí quyết ngủ ngon sâu giấc'
         ]
         return response_data
 
-    # ================= 3. PHÂN TÍCH TRIỆU CHỨNG BỆNH LÝ & ĐIỀU HƯỚNG CHUYÊN KHOA =================
-    detected_specialties = []
-    matched_advice = []
-    matched_urgent = []
+    # ================= BƯỚC 6: PHÂN TÍCH TRIỆU CHỨNG LÂM SÀNG TỰ NHIÊN =================
+    detected_specialty_key = None
+    longest_symptom_kw = 0
+    for spec_key, spec_info in SYMPTOM_CLINICAL_MAP.items():
+        for kw in spec_info['keywords']:
+            if kw in msg_clean and len(kw) > longest_symptom_kw:
+                detected_specialty_key = spec_key
+                longest_symptom_kw = len(kw)
 
-    for cat_name, cat_info in SYMPTOM_KNOWLEDGE_BASE.items():
-        for kw in cat_info['keywords']:
-            if kw in msg_clean:
-                detected_specialties.append(cat_info['specialty_name'])
-                matched_advice.append(cat_info['advice'])
-                if cat_info['urgent']:
-                    matched_urgent.append(cat_info['urgent'])
-                break
+    if detected_specialty_key:
+        spec_info = SYMPTOM_CLINICAL_MAP[detected_specialty_key]
+        specialty_name = spec_info['specialty_name']
 
-    if detected_specialties:
-        primary_specialty = detected_specialties[0]
-        specialty_text = " hoặc ".join([f"**{s}**" for s in detected_specialties[:2]])
-        advice_text = " ".join(matched_advice[:1])
-        urgent_text = f"\n\n⚠️ **Lưu ý khẩn:** {matched_urgent[0]}" if matched_urgent else ""
-
-        # Kiểm tra xem người dùng có nói rõ ngay từ đầu là muốn đặt lịch không
         explicitly_booking = any(w in msg_clean for w in ['đặt lịch', 'muốn khám', 'đặt khám', 'hẹn khám', 'tìm bác sĩ', 'xem bác sĩ'])
 
         if explicitly_booking:
-            # Người dùng đã yêu cầu đặt lịch rõ ràng ngay từ đầu
             specialty_doctors = BacSi.objects.filter(
-                chuyen_khoa__ten_chuyen_khoa=primary_specialty,
+                chuyen_khoa__ten_chuyen_khoa=specialty_name,
                 trang_thai=True
             ).select_related('benh_vien', 'chuyen_khoa', 'user')[:4]
 
@@ -587,79 +948,88 @@ def process_medical_chat(user_message, session=None):
                 })
 
             response_data['stage'] = 'booking_confirmed'
-            response_data['suggested_specialty'] = primary_specialty
+            response_data['suggested_specialty'] = specialty_name
             response_data['suggested_doctors'] = doc_list
             response_data['suggested_provinces'] = [p.ten_tinh for p in all_provinces]
             response_data['quick_replies'] = [p.ten_tinh for p in all_provinces]
             response_data['reply'] = (
-                f"🤖 **Bác sĩ AI xin tư vấn:**\n"
-                f"Với triệu chứng bạn vừa chia sẻ, chuyên khoa phù hợp là {specialty_text}.\n\n"
-                f"🩺 **Lời khuyên y khoa:**\n{advice_text}{urgent_text}\n\n"
+                f"Dạ vâng! Với các biểu hiện bạn vừa chia sẻ, chuyên khoa phù hợp nhất để thăm khám là **{specialty_name}**.\n\n"
+                f"🩺 **Lời khuyên chăm sóc ban đầu:**\n{spec_info['home_care']}\n\n"
+                f"⚠️ **Lưu ý:** {spec_info['red_flags']}\n\n"
                 f"{DISCLAIMER_TEXT}\n\n"
-                f"👨‍⚕️ **Đội ngũ bác sĩ chuyên khoa {primary_specialty} sẵn sàng nhận lịch (cả bác sĩ nam & nữ):**\n"
-                f"Bạn có thể chọn trực tiếp bác sĩ bên dưới hoặc chọn **Tỉnh/Thành phố** để xem bệnh viện tiếp nhận:"
+                f"👨‍⚕️ **Đội ngũ bác sĩ chuyên khoa {specialty_name} sẵn sàng nhận lịch khám:**\n"
+                f"Bạn có thể chọn bác sĩ bên dưới hoặc chọn **Tỉnh/Thành phố** để xem bệnh viện tiếp nhận:"
             )
             return response_data
         else:
-            # Trò chuyện tự nhiên: Tư vấn ân cần, sau đó hỏi người dùng có muốn đặt lịch không!
+            llm_reply = call_external_llm(user_message, conversation_history)
+            if llm_reply:
+                reply_text = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
+            else:
+                reply_text = (
+                    f"{spec_info['greeting']}\n\n"
+                    f"🩺 **Về nguyên nhân có thể gặp:**\n"
+                    f"{spec_info['clinical_cause']}\n\n"
+                    f"👉 **Những việc bạn nên làm để chăm sóc tại nhà:**\n"
+                    f"{spec_info['home_care']}\n\n"
+                    f"⚠️ **Khi nào cần đi khám bác sĩ:**\n"
+                    f"{spec_info['red_flags']}\n\n"
+                    f"💡 **Định hướng chuyên khoa:**\n"
+                    f"Nếu tình trạng kéo dài hoặc không thuyên giảm sau 2-3 ngày, bạn nên thăm khám tại chuyên khoa **{specialty_name}** để được bác sĩ kiểm tra và kê đơn thuốc chính xác nhé.\n\n"
+                    f"{DISCLAIMER_TEXT}\n\n"
+                    f"---\n"
+                    f"💬 *Tình trạng này bạn bị mấy ngày rồi? Hiện tại bạn có bị sốt hay xuất hiện thêm triệu chứng khó chịu nào khác không?*"
+                )
+
             response_data['stage'] = 'ask_booking_confirmation'
-            response_data['suggested_specialty'] = primary_specialty
+            response_data['suggested_specialty'] = specialty_name
             response_data['suggested_doctors'] = []
             response_data['suggested_provinces'] = []
+            response_data['reply'] = reply_text
             response_data['quick_replies'] = [
                 'Có, tôi muốn đặt lịch khám',
+                'Tôi bị 1-2 ngày nay',
                 'Chưa, tôi muốn hỏi thêm'
             ]
-            response_data['reply'] = (
-                f"Chào bạn, tôi rất chia sẻ với tình trạng khó chịu mà bạn đang gặp phải.\n\n"
-                f"🩺 **Về triệu chứng của bạn:**\n"
-                f"{advice_text}{urgent_text}\n\n"
-                f"💡 **Định hướng chuyên khoa:**\n"
-                f"Với những biểu hiện này, nếu triệu chứng kéo dài hoặc không thuyên giảm, bạn nên thăm khám tại chuyên khoa {specialty_text} để được bác sĩ kiểm tra và chẩn đoán chính xác nhất.\n\n"
-                f"{DISCLAIMER_TEXT}\n\n"
-                f"---\n"
-                f"💬 **Tình trạng này bạn bị bao lâu rồi? Bạn có muốn tôi hỗ trợ đặt lịch khám với Bác sĩ chuyên khoa {primary_specialty} không?**"
-            )
             return response_data
 
-    # ================= 4. THỬ GỌI OPENAI CHO CÂU HỎI MỞ BẤT KỲ =================
-    openai_reply = call_openai_medical_chat(user_message)
-    if openai_reply:
-        response_data['reply'] = openai_reply + f"\n\n{DISCLAIMER_TEXT}"
+    # ================= BƯỚC 7: CÂU HỎI MỞ / TỰ DO -> GỌI LLM HOẶC TRẢ LỜI MỞ =================
+    llm_reply = call_external_llm(user_message, conversation_history)
+    if llm_reply:
+        response_data['reply'] = llm_reply + f"\n\n{DISCLAIMER_TEXT}"
         response_data['quick_replies'] = ['Tư vấn dinh dưỡng', 'Khám tại Đà Nẵng', 'Khám tại Hà Nội', 'Khám tại TP.HCM']
         return response_data
 
-    # ================= 5. CHÀO HỎI HOẶC TRẢ LỜI MỞ RỘNG =================
-    greetings = ['xin chào', 'chào bạn', 'hello', 'hi', 'bạn là ai', 'có ai ở đây không', 'giúp tôi']
+    # Chào hỏi hoặc giới thiệu năng lực
+    greetings = ['xin chào', 'chào bạn', 'hello', 'hi', 'bạn là ai', 'có ai ở đây không', 'giúp tôi', 'alo']
     if any(g in msg_clean for g in greetings):
         response_data['reply'] = (
-            "👋 **Xin chào bạn! Tôi là Bác sĩ Trợ lý AI của Medical AI.**\n\n"
-            "Tôi luôn sẵn sàng hỗ trợ bạn 24/7 về mọi vấn đề sức khỏe:\n"
-            "1. 🥗 **Tư vấn dinh dưỡng & ăn uống lành mạnh:** Ăn gì tốt cho dạ dày, tiểu đường, tim mạch, giảm cân, tăng cơ...\n"
-            "2. 🌿 **Lối sống & Chăm sóc sức khỏe:** Cách cải thiện giấc ngủ, giảm căng thẳng, chăm sóc mắt, sơ cứu tại nhà...\n"
-            "3. 🩺 **Phân tích triệu chứng y khoa:** Định hướng đúng chuyên khoa khi bạn cảm thấy không khỏe.\n"
-            "4. 🏥 **Đặt lịch khám bệnh thông minh:** Tìm bệnh viện uy tín tại 5 tỉnh thành và đặt lịch với bác sĩ chuyên khoa (nam & nữ).\n\n"
-            "👉 **Bạn có thể hỏi tôi bất kỳ điều gì!** *(Ví dụ: 'Ăn gì tốt cho tiêu hóa?', 'Uống nước thế nào đúng cách?', 'Tôi bị đau nửa đầu 2 ngày nay')*"
+            "👋 **Xin chào bạn! Mình là Trợ lý Y tế AI của Medical AI.**\n\n"
+            "Mình luôn ở đây để lắng nghe và hỗ trợ bạn 24/7 về mọi vấn đề sức khỏe:\n"
+            "1. 🩺 **Tư vấn triệu chứng & hoàn cảnh bệnh:** Phân tích cụ thể tình trạng khó chịu (như tối uống bia sáng rát họng, thức khuya đau đầu, nằm điều hòa cảm lạnh...).\n"
+            "2. 🥗 **Chế độ ăn uống & dinh dưỡng:** Tư vấn thực đơn cho người đau dạ dày, tiểu đường, giảm mỡ, tăng cơ, ăn uống lành mạnh...\n"
+            "3. 🌿 **Mẹo sống khỏe & Chăm sóc tại nhà:** Cách cải thiện giấc ngủ, giảm căng thẳng, mẹo sơ cứu ban đầu an toàn.\n"
+            "4. 🏥 **Kết nối bác sĩ & Đặt lịch khám:** Tìm bệnh viện uy tín tại 5 tỉnh thành và đặt lịch với bác sĩ chuyên khoa phù hợp.\n\n"
+            "👉 *Bạn đang cảm thấy không khỏe ở đâu hay muốn tìm hiểu về chế độ ăn uống gì? Cứ thoải mái chia sẻ với mình nhé!*"
         )
         response_data['quick_replies'] = [
+            'Tối qua tôi uống bia sáng nay rát họng',
             'Ăn gì tốt cho dạ dày?',
-            'Chế độ ăn cho người tiểu đường',
-            'Cách giảm cân an toàn',
             'Tôi bị đau đầu, chóng mặt',
+            'Cách giảm cân an toàn',
             'Đặt lịch tại Đà Nẵng'
         ]
         return response_data
 
-    # 6. Phản hồi thông minh mặc định khi câu hỏi quá trừu tượng
+    # Phản hồi thông minh mặc định
     response_data['reply'] = (
-        "Cảm ơn câu hỏi của bạn. Tôi có thể giải đáp cho bạn về **chế độ dinh dưỡng, ăn uống cho từng bệnh lý, mẹo sống khỏe, sơ cứu tại nhà** hoặc **phân tích triệu chứng để đặt lịch khám**.\n\n"
-        "Bạn hãy nhập chi tiết hơn câu hỏi của mình nhé (Ví dụ: *'Người bị cao huyết áp nên ăn gì?'*, *'Cách hạ sốt nhanh tại nhà'*, *'Tôi bị đau nhức khớp gối'*)."
+        "Cảm ơn câu hỏi của bạn. Mình có thể hỗ trợ bạn tư vấn cặn kẽ về **các triệu chứng khó chịu thường gặp, chế độ dinh dưỡng ăn uống cho từng bệnh lý, mẹo chăm sóc sức khỏe tại nhà** hoặc **hỗ trợ kết nối bác sĩ chuyên khoa**.\n\n"
+        "Bạn hãy chia sẻ chi tiết hơn về tình trạng của mình nhé (Ví dụ: *'Tối qua tôi uống bia sáng nay rát họng'*, *'Người đau dạ dày nên ăn gì?'*, *'Tôi bị đau nửa đầu 2 ngày nay'*)."
     )
     response_data['quick_replies'] = [
+        'Tối qua tôi uống bia sáng nay rát họng',
         'Dinh dưỡng cho dạ dày',
-        'Thực đơn giảm mỡ an toàn',
         'Cách ngủ ngon sâu giấc',
         'Đặt lịch khám tại Đà Nẵng'
     ]
     return response_data
-
